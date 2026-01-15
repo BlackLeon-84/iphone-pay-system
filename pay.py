@@ -6,7 +6,7 @@ import sqlite3
 # 페이지 설정
 st.set_page_config(page_title="아이폰 정산 시스템", layout="centered")
 
-# --- 데이터베이스 설정 ---
+# --- 데이터베이스 및 기본 설정 ---
 def get_connection():
     return sqlite3.connect("data.db", check_same_thread=False)
 
@@ -17,7 +17,6 @@ def init_db():
         c.execute("SELECT 비고 FROM salary LIMIT 1")
     except sqlite3.OperationalError:
         c.execute("DROP TABLE IF EXISTS salary")
-    
     c.execute('''CREATE TABLE IF NOT EXISTS salary
                  (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 일반필름 INTEGER, 
                   풀필름 INTEGER, 젤리 INTEGER, 케이블 INTEGER, 어댑터 INTEGER, 
@@ -27,7 +26,7 @@ def init_db():
 
 init_db()
 
-# --- 로그인 ---
+# --- 로그인 세션 ---
 STAFF_LIST = ["성훈", "남근"]
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -43,7 +42,6 @@ if not st.session_state.logged_in:
             st.rerun()
     st.stop()
 
-# --- 메인 로직 ---
 user_name = st.session_state.user_name
 
 # 1. 최상단: 날짜 선택 및 휴무 버튼
@@ -66,44 +64,28 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 2. [수정 핵심] 모바일 가로 고정 표(Table) 현황판
+# 2. 최근 기입 현황 (가로 고정 표)
 st.write("**🗓️ 최근 기입 현황**")
-
-# 표 헤더 및 내용 생성 (최근 7일)
-table_html = """
-<table style="width:100%; border-collapse: collapse; table-layout: fixed;">
-    <tr style="background-color: #f8f9fa;">
-"""
-# 날짜 헤더 (윗줄)
+table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
 for i in range(7):
     d = date.today() - timedelta(days=6-i)
     table_html += f"<th style='border:1px solid #ddd; padding:5px; font-size:10px; text-align:center;'>{d.day}일</th>"
 table_html += "</tr><tr>"
-
-# 상태 아이콘 (아랫줄)
 for i in range(7):
     d = date.today() - timedelta(days=6-i)
     str_check = d.strftime("%Y-%m-%d")
     target_row = df_all[df_all["날짜"] == str_check]
-    
     icon, bg = "⚪", "#ffffff"
     if not target_row.empty:
-        if target_row.iloc[0]["비고"] == "휴무":
-            icon, bg = "💤", "#e1f5fe"
-        else:
-            icon, bg = "✅", "#e8f5e9"
-    
+        if target_row.iloc[0]["비고"] == "휴무": icon, bg = "💤", "#e1f5fe"
+        else: icon, bg = "✅", "#e8f5e9"
     table_html += f"<td style='border:1px solid #ddd; padding:8px; text-align:center; background-color:{bg}; font-size:16px;'>{icon}</td>"
-
 table_html += "</tr></table>"
-
-# HTML 출력
 st.markdown(table_html, unsafe_allow_html=True)
-st.write("")
 
 st.divider()
 
-# 3. 인센티브 입력 섹션 (가로 버튼)
+# 3. 인센티브 입력 및 가로 버튼 고정
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
@@ -114,6 +96,23 @@ if st.session_state.incen_history:
     st.caption(f"📜 {' > '.join([f'{amt:,}' for amt in st.session_state.incen_history])}")
 
 add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=1000, label_visibility="collapsed")
+
+# --- [핵심] 버튼 가로 고정 CSS ---
+st.markdown("""
+    <style>
+    /* 버튼들을 감싸는 컨테이너를 가로로 강제 정렬 */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 10px !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div {
+        width: 33.3% !important;
+        min-width: 0px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 btn_c1, btn_c2, btn_c3 = st.columns(3)
 if btn_c1.button("➕ 추가", use_container_width=True):
@@ -130,7 +129,7 @@ if btn_c3.button("🧹 리셋", use_container_width=True):
 
 st.write("")
 
-# 4. 필름 및 기타 항목 (2열 배치)
+# 4. 필름 및 기타 항목
 f_c1, f_c2 = st.columns(2)
 v_nf = f_c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
 v_ff = f_c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -148,12 +147,10 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 (기존 스타일 유지)
+# 5. 정산 현황 (기존 상세 스타일)
 st.divider()
 st.subheader("📊 정산 현황")
-
-BASE_SALARY = 3500000
-INSURANCE = 104760
+BASE_SALARY, INSURANCE = 3500000, 104760
 
 if selected_date.day >= 13:
     start_dt = date(selected_date.year, selected_date.month, 13)
@@ -168,21 +165,17 @@ df_now = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(
 if not df_now.empty:
     df_now['날짜_dt'] = pd.to_datetime(df_now['날짜']).dt.date
     period_df = df_now[(df_now['날짜_dt'] >= start_dt) & (df_now['날짜_dt'] <= end_dt)].sort_values("날짜", ascending=False)
-    
     if not period_df.empty:
         total_extra = period_df["합계"].sum()
         col_res1, col_res2 = st.columns(2)
         col_res1.metric("누적 수당", f"{total_extra:,}원")
         col_res2.metric("실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
-        
         st.write("---")
         for index, row in period_df.iterrows():
             is_off_row = row['비고'] == "휴무"
-            title = f"📅 {row['날짜']} " + ("(🌴 휴무)" if is_off_row else f"(합계: {row['합계']:,}원)")
+            title = f"📅 {row['날짜']} " + ("(🌴 휴무)" if is_off_row else f"({row['합계']:,}원)")
             with st.expander(title):
-                if is_off_row:
-                    st.write("이날은 휴무로 기록되었습니다.")
+                if is_off_row: st.write("이날은 휴무로 기록되었습니다.")
                 else:
-                    st.write(f"🔹 **기본 인센**: {row['인센티브']:,}원")
-                    st.write(f"🔹 **필름**: 일반 {row['일반필름']} / 풀 {row['풀필름']}")
+                    st.write(f"🔹 **인센**: {row['인센티브']:,}원 | **필름**: {row['일반필름']}/{row['풀필름']}")
                     st.write(f"🔹 **기타**: 젤리 {row['젤리']} / 케이블 {row['케이블']} / 어댑터 {row['어댑터']}")
