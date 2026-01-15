@@ -63,13 +63,13 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 2. 최근 기입 현황 (가로 고정 표)
+# 2. 최근 기입 현황 (가로 고정 표 - HTML 방식 유지하되 태그 보완)
 st.write("**🗓️ 최근 기입 현황**")
-table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
+badge_html = "<table style='width:100%; border-collapse: collapse; table-layout: fixed;'><tr style='background-color: #f8f9fa;'>"
 for i in range(7):
     d = date.today() - timedelta(days=6-i)
-    table_html += f"<th style='border:1px solid #ddd; padding:5px; font-size:10px; text-align:center;'>{d.day}일</th>"
-table_html += "</tr><tr>"
+    badge_html += f"<th style='border:1px solid #ddd; padding:5px; font-size:10px; text-align:center;'>{d.day}일</th>"
+badge_html += "</tr><tr>"
 for i in range(7):
     d = date.today() - timedelta(days=6-i)
     str_check = d.strftime("%Y-%m-%d")
@@ -78,9 +78,9 @@ for i in range(7):
     if not target_row.empty:
         if target_row.iloc[0]["비고"] == "휴무": icon, bg = "💤", "#e1f5fe"
         else: icon, bg = "✅", "#e8f5e9"
-    table_html += f"<td style='border:1px solid #ddd; padding:8px; text-align:center; background-color:{bg}; font-size:16px;'>{icon}</td>"
-table_html += "</tr></table>"
-st.markdown(table_html, unsafe_allow_html=True)
+    badge_html += f"<td style='border:1px solid #ddd; padding:8px; text-align:center; background-color:{bg}; font-size:16px;'>{icon}</td>"
+badge_html += "</tr></table>"
+st.markdown(badge_html, unsafe_allow_html=True)
 
 st.divider()
 
@@ -99,7 +99,7 @@ add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=1000
 # 버튼 가로 고정 CSS
 st.markdown("""
     <style>
-    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 10px !important; }
+    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 8px !important; }
     div[data-testid="stHorizontalBlock"] > div { width: 33.3% !important; min-width: 0px !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -137,9 +137,9 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 및 상세 보고서
+# 5. 정산 현황 및 제출용 요약
 st.divider()
-st.subheader("📊 정산 현황")
+st.subheader("📊 정산 및 제출용")
 BASE_SALARY, INSURANCE = 3500000, 104760
 
 if selected_date.day >= 13:
@@ -162,37 +162,17 @@ if not df_now.empty:
         c_res1.metric("누적 수당", f"{total_extra:,}원")
         c_res2.metric("실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
         
-        # --- [수정] 스크린샷 전용 초슬림 제출용 표 ---
+        # --- [수정 핵심] 제출용 요약 표 (항목 분리 + 년도 제거) ---
         st.write("**📄 제출용 요약 (스샷용)**")
         
-        # 년도 제외 및 컬럼 축소
-        report_html = """
-        <div style="overflow-x: auto;">
-        <table style="width:100%; border-collapse: collapse; font-size: 11px; text-align: center;">
-            <tr style="background-color: #f1f3f5; font-weight: bold;">
-                <th style="border: 1px solid #dee2e6; padding: 4px;">날짜</th>
-                <th style="border: 1px solid #dee2e6; padding: 4px;">인센</th>
-                <th style="border: 1px solid #dee2e6; padding: 4px;">일/풀</th>
-                <th style="border: 1px solid #dee2e6; padding: 4px;">소계</th>
-            </tr>
-        """
-        for _, row in period_df.iterrows():
-            m_d = datetime.strptime(row['날짜'], "%Y-%m-%d").strftime("%m-%d") # 년도 제거 (01-15 형태)
-            bg = "#ffffff" if row['비고'] != "휴무" else "#f8f9fa"
-            content = f"{row['인센티브']:,}" if row['비고'] != "휴무" else "휴무"
-            film = f"{row['일반필름']}/{row['풀필름']}" if row['비고'] != "휴무" else "-"
-            total = f"{row['합계']:,}" if row['비고'] != "휴무" else "0"
-            
-            report_html += f"""
-            <tr style="background-color: {bg};">
-                <td style="border: 1px solid #dee2e6; padding: 4px;">{m_d}</td>
-                <td style="border: 1px solid #dee2e6; padding: 4px;">{content}</td>
-                <td style="border: 1px solid #dee2e6; padding: 4px;">{film}</td>
-                <td style="border: 1px solid #dee2e6; padding: 4px; font-weight:bold;">{total}</td>
-            </tr>
-            """
-        report_html += "</table></div>"
-        st.markdown(report_html, unsafe_allow_html=True)
+        # 데이터프레임 가공 (년도 제거 및 이름 축소)
+        report_df = period_df.copy()
+        report_df['날짜'] = report_df['날짜'].apply(lambda x: x[5:]) # '2026-01-15' -> '01-15'
+        report_df = report_df[['날짜', '인센티브', '일반필름', '풀필름', '합계']]
+        report_df.columns = ['날짜', '인센', '일반', '풀', '소계']
+        
+        # 깨짐 방지를 위해 Streamlit 내장 표 사용 (디자인은 깔끔하게 자동 조정됨)
+        st.table(report_df)
 
         st.write("---")
         # [기존 유지] 일별 상세 내역 (날짜순 정렬 보정)
