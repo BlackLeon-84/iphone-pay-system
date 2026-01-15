@@ -6,7 +6,7 @@ import sqlite3
 # 페이지 설정
 st.set_page_config(page_title="아이폰 정산 시스템", layout="centered")
 
-# --- 데이터베이스 및 기본 설정 ---
+# --- 데이터베이스 설정 ---
 def get_connection():
     return sqlite3.connect("data.db", check_same_thread=False)
 
@@ -26,7 +26,7 @@ def init_db():
 
 init_db()
 
-# --- 로그인 세션 ---
+# --- 로그인 ---
 STAFF_LIST = ["성훈", "남근"]
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -44,13 +44,12 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# 1. 최상단: 날짜 선택 및 휴무 버튼
+# 1. 최상단: 날짜 및 휴무
 st.write(f"### 💼 {user_name}님 실적")
 top_c1, top_c2 = st.columns([2, 1])
 selected_date = top_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = selected_date.strftime("%Y-%m-%d")
 
-# 데이터 로드
 df_all = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(), params=(user_name,))
 existing_row = df_all[df_all["날짜"] == str_date]
 is_edit = not existing_row.empty
@@ -63,47 +62,33 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 2. 최근 기입 현황 (가로 고정 표)
+# 2. 최근 기입 현황 (HTML 최소화하여 깨짐 방지)
 st.write("**🗓️ 최근 기입 현황**")
-badge_html = "<table style='width:100%; border-collapse: collapse; table-layout: fixed;'><tr style='background-color: #f8f9fa;'>"
-for i in range(7):
-    d = date.today() - timedelta(days=6-i)
-    badge_html += f"<th style='border:1px solid #ddd; padding:5px; font-size:10px; text-align:center;'>{d.day}일</th>"
-badge_html += "</tr><tr>"
+badge_cols = st.columns(7)
 for i in range(7):
     d = date.today() - timedelta(days=6-i)
     str_check = d.strftime("%Y-%m-%d")
     target_row = df_all[df_all["날짜"] == str_check]
-    icon, bg = "⚪", "#ffffff"
+    icon = "⚪"
     if not target_row.empty:
-        if target_row.iloc[0]["비고"] == "휴무": icon, bg = "💤", "#e1f5fe"
-        else: icon, bg = "✅", "#e8f5e9"
-    badge_html += f"<td style='border:1px solid #ddd; padding:8px; text-align:center; background-color:{bg}; font-size:16px;'>{icon}</td>"
-badge_html += "</tr></table>"
-st.markdown(badge_html, unsafe_allow_html=True)
+        icon = "💤" if target_row.iloc[0]["비고"] == "휴무" else "✅"
+    with badge_cols[i]:
+        st.write(f"**{d.day}**")
+        st.write(icon)
 
 st.divider()
 
-# 3. 인센티브 입력 및 가로 버튼 고정
+# 3. 인센티브 및 가로 버튼
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
     st.session_state.last_date = str_date
 
 st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
-if st.session_state.incen_history:
-    st.caption(f"📜 {' > '.join([f'{amt:,}' for amt in st.session_state.incen_history])}")
-
 add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=1000, label_visibility="collapsed")
 
-# 버튼 가로 고정 CSS
-st.markdown("""
-    <style>
-    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 8px !important; }
-    div[data-testid="stHorizontalBlock"] > div { width: 33.3% !important; min-width: 0px !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
+# 가로 버튼 고정 CSS
+st.markdown("<style>div[data-testid='stHorizontalBlock']{display:flex!important;flex-direction:row!important;gap:5px!important;}</style>", unsafe_allow_html=True)
 btn_c1, btn_c2, btn_c3 = st.columns(3)
 if btn_c1.button("➕ 추가", use_container_width=True):
     st.session_state.current_incen_sum += add_amount
@@ -117,9 +102,7 @@ if btn_c3.button("🧹 리셋", use_container_width=True):
     st.session_state.incen_history = []
     st.rerun()
 
-st.write("")
-
-# 4. 필름 및 기타 항목 (기존 2열 유지)
+# 4. 필름 및 기타 항목
 f_c1, f_c2 = st.columns(2)
 v_nf = f_c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
 v_ff = f_c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -137,11 +120,12 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 및 제출용 전항목 표
+# 5. [수정] 정산 현황 및 제출용 표
 st.divider()
-st.subheader("📊 정산 현황")
+st.subheader("📊 정산 및 제출용")
 BASE_SALARY, INSURANCE = 3500000, 104760
 
+# 정산 기간 계산
 if selected_date.day >= 13:
     start_dt = date(selected_date.year, selected_date.month, 13)
     next_month = selected_date.replace(day=28) + timedelta(days=20)
@@ -162,51 +146,29 @@ if not df_now.empty:
         c_res1.metric("누적 수당", f"{total_extra:,}원")
         c_res2.metric("실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
         
-        # --- [최종 핵심] 전항목 포함 제출용 표 (스샷용) ---
+        # --- [핵심] 깨짐 없는 제출용 상세 표 ---
         st.write("**📄 제출용 상세 요약 (스샷용)**")
         
-        # HTML 표 시작 (폰트 사이즈 축소하여 가로 공간 확보)
-        report_html = """
-        <div style="width: 100%; overflow-x: auto;">
-        <table style="width:100%; border-collapse: collapse; font-size: 10px; text-align: center; border: 1px solid #dee2e6;">
-            <tr style="background-color: #f1f3f5; font-weight: bold;">
-                <th style="border: 1px solid #dee2e6; padding: 4px;">날짜</th>
-                <th style="border: 1px solid #dee2e6; padding: 4px;">인센</th>
-                <th style="border: 1px solid #dee2e6; padding: 4px;">일</th>
-                <th style="border: 1px solid #dee2e6; padding: 4px;">풀</th>
-                <th style="border: 1px solid #dee2e6; padding: 4px;">젤</th>
-                <th style="border: 1px solid #dee2e6; padding: 4px;">케</th>
-                <th style="border: 1px solid #dee2e6; padding: 4px;">어</th>
-                <th style="border: 1px solid #dee2e6; padding: 4px;">소계</th>
-            </tr>
-        """
-        for _, row in period_df.iterrows():
-            m_d = row['날짜'][5:] # 년도 제거
-            bg = "#ffffff" if row['비고'] != "휴무" else "#f8f9fa"
-            # 휴무일 경우 0 대신 빈칸이나 하이픈 처리
-            is_off = row['비고'] == "휴무"
-            report_html += f"""
-            <tr style="background-color: {bg};">
-                <td style="border: 1px solid #dee2e6; padding: 4px;">{m_d}</td>
-                <td style="border: 1px solid #dee2e6; padding: 4px;">{f"{row['인센티브']:,}" if not is_off else "-"}</td>
-                <td style="border: 1px solid #dee2e6; padding: 4px;">{row['일반필름'] if not is_off else ""}</td>
-                <td style="border: 1px solid #dee2e6; padding: 4px;">{row['풀필름'] if not is_off else ""}</td>
-                <td style="border: 1px solid #dee2e6; padding: 4px;">{row['젤리'] if not is_off else ""}</td>
-                <td style="border: 1px solid #dee2e6; padding: 4px;">{row['케이블'] if not is_off else ""}</td>
-                <td style="border: 1px solid #dee2e6; padding: 4px;">{row['어댑터'] if not is_off else ""}</td>
-                <td style="border: 1px solid #dee2e6; padding: 4px; font-weight:bold;">{f"{row['합계']:,}" if not is_off else "휴무"}</td>
-            </tr>
-            """
-        report_html += "</table></div>"
-        st.markdown(report_html, unsafe_allow_html=True)
+        # 데이터 가공
+        report_df = period_df.copy()
+        report_df['날짜'] = report_df['날짜'].apply(lambda x: x[5:]) # 년도 제거
+        report_df = report_df[['날짜', '인센티브', '일반필름', '풀필름', '젤리', '케이블', '어댑터', '합계']]
+        report_df.columns = ['날짜', '인센', '일반', '풀', '젤리', '케이블', '어댑터', '소계']
+        
+        # HTML을 전혀 쓰지 않는 순정 표 방식 (절대 안깨짐)
+        st.dataframe(
+            report_df, 
+            hide_index=True, 
+            use_container_width=True
+        )
 
-        st.write("---")
-        # 기존 일별 상세 내역 유지
+        st.divider()
+        # 기존 일별 상세 리스트 (Expander)
         for index, row in period_df.sort_values("날짜", ascending=False).iterrows():
-            is_off_row = row['비고'] == "휴무"
-            title = f"📅 {row['날짜']} " + ("(🌴 휴무)" if is_off_row else f"({row['합계']:,}원)")
+            is_off = row['비고'] == "휴무"
+            title = f"📅 {row['날짜']} " + ("(🌴 휴무)" if is_off else f"({row['합계']:,}원)")
             with st.expander(title):
-                if is_off_row: st.write("이날은 휴무로 기록되었습니다.")
+                if is_off: st.write("휴무")
                 else:
-                    st.write(f"🔹 **인센**: {row['인센티브']:,}원 | **필름**: {row['일반필름']}/{row['풀필름']}")
-                    st.write(f"🔹 **기타**: 젤리 {row['젤리']} / 케이블 {row['케이블']} / 어댑터 {row['어댑터']}")
+                    st.write(f"🔹 인센: {row['인센티브']:,}원 | 필름: {row['일반필름']}/{row['풀필름']}")
+                    st.write(f"🔹 젤리: {row['젤리']} / 케이블: {row['케이블']} / 어댑터: {row['어댑터']}")
