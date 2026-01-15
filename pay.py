@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 import sqlite3
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.1.4", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.1.5", layout="centered")
 
 # --- 데이터베이스 및 기본 설정 ---
 def get_connection():
@@ -79,36 +79,36 @@ settings = load_settings()
 item_names = settings['display_name'].tolist()
 item_prices = settings['price'].tolist()
 
-# --- CSS 설정 (버튼 및 표 간섭 해결) ---
+# --- CSS 설정 (강력한 레이아웃 분리) ---
 st.markdown("""
     <style>
     .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }
     
-    /* 버튼 가로 정렬 강제 고정 */
-    div[data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        width: 100% !important;
-        gap: 5px !important;
-    }
-    div[data-testid="stHorizontalBlock"] > div {
+    /* [버튼 레이아웃 전용] 1:1:1 균등 배분 */
+    [data-testid="column"] {
         flex: 1 1 0% !important;
         min-width: 0 !important;
     }
+    
+    /* 버튼 자체 스타일 */
     .stButton>button {
         width: 100% !important;
         height: 42px !important;
         padding: 0px !important;
+        font-weight: bold !important;
     }
     
-    /* 하단 리포트 표 전용 스타일 */
+    /* [하단 리포트 표 전용] 상단 설정에 영향받지 않도록 독립 설정 */
+    .report-table-container {
+        width: 100%;
+        overflow-x: auto; /* 혹시 모를 짤림 방지 */
+    }
     .report-table {
         width: 100%;
         border-collapse: collapse;
         font-size: 10px;
         text-align: center;
-        table-layout: auto !important;
+        table-layout: auto !important; /* 표는 내용에 맞게 */
         margin-top: 10px;
     }
     .report-table th, .report-table td {
@@ -116,12 +116,11 @@ st.markdown("""
         padding: 4px 1px !important;
         white-space: nowrap;
     }
-    .report-table th { background-color: #f8f9fa; font-weight: bold; }
+    .report-table th { background-color: #f8f9fa; }
     </style>
     """, unsafe_allow_html=True)
 
-# 버전 표시 수정
-st.markdown('<p class="version-text">v1.1.4-ver</p>', unsafe_allow_html=True)
+st.markdown('<p class="version-text">v1.1.5-ver</p>', unsafe_allow_html=True)
 
 # 1. 상단 날짜 및 휴무
 st.write(f"### 💼 {user_name}님 실적")
@@ -133,13 +132,14 @@ df_all = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(
 existing_row = df_all[df_all["날짜"] == str_date]
 is_edit = not existing_row.empty
 
-if top_c2.button("🌴 휴무", use_container_width=True):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''', (user_name, str_date, "휴무"))
-    conn.commit()
-    conn.close()
-    st.rerun()
+with top_c2:
+    if st.button("🌴 휴무"):
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''', (user_name, str_date, "휴무"))
+        conn.commit()
+        conn.close()
+        st.rerun()
 
 # 2. 최근 기입 현황
 st.write("**🗓️ 최근 기입 현황**")
@@ -172,17 +172,20 @@ st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**"
 add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
 btn_c1, btn_c2, btn_c3 = st.columns(3)
-if btn_c1.button("➕ 추가"):
-    st.session_state.current_incen_sum += add_amount
-    st.session_state.incen_history.append(add_amount)
-    st.rerun()
-if btn_c2.button("↩️ 취소") and st.session_state.incen_history:
-    st.session_state.current_incen_sum -= st.session_state.incen_history.pop()
-    st.rerun()
-if btn_c3.button("🧹 리셋"):
-    st.session_state.current_incen_sum = 0
-    st.session_state.incen_history = []
-    st.rerun()
+with btn_c1:
+    if st.button("➕ 추가"):
+        st.session_state.current_incen_sum += add_amount
+        st.session_state.incen_history.append(add_amount)
+        st.rerun()
+with btn_c2:
+    if st.button("↩️ 취소") and st.session_state.incen_history:
+        st.session_state.current_incen_sum -= st.session_state.incen_history.pop()
+        st.rerun()
+with btn_c3:
+    if st.button("🧹 리셋"):
+        st.session_state.current_incen_sum = 0
+        st.session_state.incen_history = []
+        st.rerun()
 
 # 4. 수량 입력
 f_c1, f_c2 = st.columns(2)
@@ -220,7 +223,7 @@ if not period_df.empty:
     final_pay = int(BASE_SALARY + total_extra - INSURANCE)
     
     report_month = end_dt.month 
-    st.info(f"📅 **{report_month}월 정산 내역** ({start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')})")
+    st.info(f"📅 **{report_month}월 정산 내역**")
     
     st.markdown(f"""
         <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #ff4b4b; margin-top:5px; margin-bottom:15px;">
@@ -229,7 +232,7 @@ if not period_df.empty:
         </div>
     """, unsafe_allow_html=True)
     
-    html_code = f"""<table class="report-table">
+    html_code = f"""<div class="report-table-container"><table class="report-table">
         <tr>
             <th style="width:35px;">날짜</th>
             <th>인센</th>
@@ -245,5 +248,5 @@ if not period_df.empty:
         short_date = f"{d_val.day}일"
         html_code += f"<tr><td>{short_date}</td><td>{r['인센티브']:,}</td><td>{r['일반필름']}</td><td>{r['풀필름']}</td><td>{r['젤리']}</td><td>{r['케이블']}</td><td>{r['어댑터']}</td><td style='font-weight:bold;'>{r['합계']:,}</td></tr>"
     
-    html_code += f"<tr style='background-color:#fff3f3; font-weight:bold;'><td>합계</td><td>{period_df['인센티브'].sum():,}</td><td>{period_df['일반필름'].sum()}</td><td>{period_df['풀필름'].sum()}</td><td>{period_df['젤리'].sum()}</td><td>{period_df['케이블'].sum()}</td><td>{period_df['어댑터'].sum()}</td><td style='color:#ff4b4b;'>{total_extra:,}</td></tr></table>"
+    html_code += f"<tr style='background-color:#fff3f3; font-weight:bold;'><td>합계</td><td>{period_df['인센티브'].sum():,}</td><td>{period_df['일반필름'].sum()}</td><td>{period_df['풀필름'].sum()}</td><td>{period_df['젤리'].sum()}</td><td>{period_df['케이블'].sum()}</td><td>{period_df['어댑터'].sum()}</td><td style='color:#ff4b4b;'>{total_extra:,}</td></tr></table></div>"
     st.markdown(html_code, unsafe_allow_html=True)
