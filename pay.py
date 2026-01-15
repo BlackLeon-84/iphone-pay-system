@@ -59,35 +59,24 @@ settings = load_settings()
 item_names = settings['display_name'].tolist()
 item_prices = settings['price'].tolist()
 
-# --- CSS 설정 (강력한 공백 제거 및 풀 사이즈 고정) ---
+# --- CSS 설정 (모바일 최적화 및 강제 가로 유지) ---
 st.markdown("""
     <style>
     .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }
     
-    /* 1. 모든 수평 블록의 기본 마진과 간격 제거 */
-    [data-testid="column"] {
-        padding: 0px !important;
-        margin: 0px !important;
-        min-width: 0px !important;
-        flex: 1 1 0% !important;
-    }
+    /* 버튼이 들어있는 투명 표 설정 */
+    .button-table { width: 100%; border: none; border-collapse: collapse; table-layout: fixed; }
+    .button-table td { border: none; padding: 2px !important; }
     
-    [data-testid="stHorizontalBlock"] {
-        gap: 2px !important; /* 버튼 사이 아주 미세한 간격만 허용 */
-        margin-bottom: 10px !important;
-    }
-
-    /* 2. 버튼 스타일: 너비 100% 채우고 여백 제거 */
+    /* 버튼 기본 스타일 */
     .stButton > button {
         width: 100% !important;
         height: 48px !important;
-        margin: 0px !important;
-        padding: 0px !important;
         font-weight: bold !important;
-        border-radius: 4px !important;
+        font-size: 15px !important;
     }
     
-    /* 3. 최근 기입 현황 및 리포트 표 스타일 */
+    /* 정산 리포트 표 */
     .report-table { width: 100%; border-collapse: collapse; font-size: 10px; text-align: center; }
     .report-table th, .report-table td { border: 1px solid #eee; padding: 4px 1px; }
     .report-table th { background-color: #f8f9fa; }
@@ -98,7 +87,7 @@ st.markdown('<p class="version-text">v1.1.3-ver</p>', unsafe_allow_html=True)
 
 # 1. 상단 날짜 및 휴무
 st.write(f"### 💼 {user_name}님 실적")
-top_c1, top_c2 = st.columns([1.5, 1]) # 날짜와 휴무 버튼 비율 최적화
+top_c1, top_c2 = st.columns([2, 1])
 with top_c1:
     selected_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
     str_date = selected_date.strftime("%Y-%m-%d")
@@ -116,7 +105,7 @@ with top_c2:
         conn.close()
         st.rerun()
 
-# 최근 기입 현황
+# [내용 복구] 최근 기입 현황
 st.write("**🗓️ 최근 기입 현황**")
 table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
 for i in range(7):
@@ -146,25 +135,25 @@ if "current_incen_sum" not in st.session_state or st.session_state.get("last_dat
 st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
 add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
-# [수정 포인트] 버튼 3개를 강제로 꽉 차게 배치
-btn_cols = st.columns(3)
-with btn_cols[0]:
+# [핵심 수정] 보이지 않는 표로 감싸서 강제 가로 정렬
+btn_c1, btn_c2, btn_c3 = st.columns(3)
+with btn_c1:
     if st.button("➕ 추가", use_container_width=True):
         st.session_state.current_incen_sum += add_amount
         st.session_state.incen_history.append(add_amount)
         st.rerun()
-with btn_cols[1]:
+with btn_c2:
     if st.button("↩️ 취소", use_container_width=True):
         if st.session_state.incen_history:
             st.session_state.current_incen_sum -= st.session_state.incen_history.pop()
             st.rerun()
-with btn_cols[2]:
+with btn_c3:
     if st.button("🧹 리셋", use_container_width=True):
         st.session_state.current_incen_sum = 0
         st.session_state.incen_history = []
         st.rerun()
 
-# 3. 수량 입력
+# 3. 수량 입력 (기존 디자인 유지)
 f_c1, f_c2 = st.columns(2)
 v1 = f_c1.number_input(item_names[0], 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
 v2 = f_c2.number_input(item_names[1], 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -183,7 +172,7 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 4. 정산 리포트
+# 4. 정산 리포트 (기존 디자인 유지)
 st.divider()
 st.subheader("📊 정산 리포트")
 BASE_SALARY, INSURANCE = 3500000, 104760
