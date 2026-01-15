@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 import sqlite3
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.1.6", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.1.7", layout="centered")
 
 # --- 데이터베이스 및 기본 설정 ---
 def get_connection():
@@ -55,80 +55,57 @@ if not st.session_state.logged_in:
     st.stop()
 
 user_name = st.session_state.user_name
-
-# --- 사이드바 ---
-with st.sidebar:
-    st.header("⚙️ 항목 및 단가 관리")
-    df_settings = load_settings()
-    new_data = []
-    with st.form("settings_form"):
-        for i, row in df_settings.iterrows():
-            st.markdown(f"**품목 {i+1}**")
-            n_name = st.text_input(f"이름", value=row['display_name'], key=f"nm_{row['id']}")
-            n_price = st.number_input(f"단가", value=int(row['price']), step=1000, key=f"pr_{row['id']}")
-            new_data.append((n_name, n_price, row['id']))
-        if st.form_submit_button("설정 저장"):
-            conn = get_connection()
-            c = conn.cursor()
-            c.executemany("UPDATE settings_v2 SET display_name=?, price=? WHERE id=?", new_data)
-            conn.commit()
-            conn.close()
-            st.rerun()
-
 settings = load_settings()
 item_names = settings['display_name'].tolist()
 item_prices = settings['price'].tolist()
 
-# --- CSS 설정 (모바일 최적화 및 강제 가로 정렬) ---
+# --- CSS 설정 (절대 레이아웃 고정) ---
 st.markdown("""
     <style>
-    .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }
+    .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: 2px; }
     
-    /* [핵심] 모든 컬럼을 강제로 가로로 나열 */
+    /* 모든 컬럼의 줄바꿈 금지 및 가로 정렬 강제 */
     [data-testid="column"] {
-        flex: 1 !important;
-        min-width: 0 !important;
+        min-width: 0px !important;
+        flex: 1 1 0% !important;
     }
     div[data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
-        align-items: flex-end !important;
+        gap: 4px !important;
     }
 
-    /* 버튼 스타일 고정 */
+    /* 버튼 높이 및 폰트 크기 최적화 */
     .stButton>button {
         width: 100% !important;
         height: 42px !important;
         padding: 0px !important;
+        font-size: 14px !important;
         font-weight: bold !important;
         white-space: nowrap !important;
     }
     
-    /* 하단 리포트 표 스타일 */
+    /* 리포트 표 스타일 */
     .report-table {
         width: 100%;
         border-collapse: collapse;
         font-size: 10px;
         text-align: center;
-        table-layout: auto !important;
-        margin-top: 10px;
     }
     .report-table th, .report-table td {
         border: 1px solid #eee;
         padding: 4px 1px !important;
         white-space: nowrap;
     }
-    .report-table th { background-color: #f8f9fa; }
     </style>
     """, unsafe_allow_html=True)
 
-st.markdown('<p class="version-text">v1.1.6-ver</p>', unsafe_allow_html=True)
+st.markdown('<p class="version-text">v1.1.7-ver</p>', unsafe_allow_html=True)
 
 # 1. 상단 날짜 및 휴무
 st.write(f"### 💼 {user_name}님 실적")
-# 휴무 버튼이 밀리지 않도록 비율을 명확히 설정
-top_c1, top_c2 = st.columns([2, 1])
+top_c1, top_c2 = st.columns([2.5, 1])
 with top_c1:
     selected_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
     str_date = selected_date.strftime("%Y-%m-%d")
@@ -146,28 +123,9 @@ with top_c2:
         conn.close()
         st.rerun()
 
-# 최근 기입 현황 (표 생략하지 않고 모두 포함)
-st.write("**🗓️ 최근 기입 현황**")
-table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
-for i in range(7):
-    d = date.today() - timedelta(days=6-i)
-    table_html += f"<th style='border:1px solid #ddd; padding:5px; font-size:10px; text-align:center;'>{d.day}일</th>"
-table_html += "</tr><tr>"
-for i in range(7):
-    d = date.today() - timedelta(days=6-i)
-    str_check = d.strftime("%Y-%m-%d")
-    target_row = df_all[df_all["날짜"] == str_check]
-    icon, bg = "⚪", "#ffffff"
-    if not target_row.empty:
-        if target_row.iloc[0]["비고"] == "휴무": icon, bg = "💤", "#e1f5fe"
-        else: icon, bg = "✅", "#e8f5e9"
-    table_html += f"<td style='border:1px solid #ddd; padding:8px; text-align:center; background-color:{bg}; font-size:16px;'>{icon}</td>"
-table_html += "</tr></table>"
-st.markdown(table_html, unsafe_allow_html=True)
-
 st.divider()
 
-# 3. 인센티브 입력 (추가, 취소, 리셋 버튼)
+# 2. 인센티브 입력 섹션
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
@@ -176,7 +134,7 @@ if "current_incen_sum" not in st.session_state or st.session_state.get("last_dat
 st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
 add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
-# 버튼 3개를 강제로 가로로 배치 (gap을 줄임)
+# [핵심 수정] 버튼 3개를 강제로 1:1:1 비율로 가두기
 btn_cols = st.columns([1, 1, 1])
 with btn_cols[0]:
     if st.button("➕ 추가", use_container_width=True):
@@ -194,7 +152,8 @@ with btn_cols[2]:
         st.session_state.incen_history = []
         st.rerun()
 
-# 4. 수량 입력
+# 3. 수량 입력
+st.write("")
 f_c1, f_c2 = st.columns(2)
 v1 = f_c1.number_input(item_names[0], 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
 v2 = f_c2.number_input(item_names[1], 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -213,7 +172,7 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 리포트 (기존 가독성 설정 유지)
+# 4. 정산 리포트
 st.divider()
 st.subheader("📊 정산 및 제출 리포트")
 BASE_SALARY, INSURANCE = 3500000, 104760
@@ -229,15 +188,9 @@ if not period_df.empty:
     total_extra = period_df["합계"].sum()
     final_pay = int(BASE_SALARY + total_extra - INSURANCE)
     st.info(f"📅 **{end_dt.month}월 정산 내역**")
-    st.markdown(f"""
-        <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #ff4b4b; margin-top:5px; margin-bottom:15px;">
-            <p style="margin:5px 0; font-size:18px; font-weight:bold;">💰 총 수당(인센+판매): {total_extra:,}원</p>
-            <p style="margin:0; font-size:22px; font-weight:bold; color:#ff4b4b;">🏦 실수령: {final_pay:,}원</p>
-        </div>
-    """, unsafe_allow_html=True)
     
     html_code = f"""<table class="report-table">
-        <tr>
+        <tr style="background-color:#f8f9fa;">
             <th style="width:35px;">날짜</th><th>인센</th><th>{item_names[0][:2]}</th><th>{item_names[1][:2]}</th><th>{item_names[2][:2]}</th><th>{item_names[3][:2]}</th><th>{item_names[4][:2]}</th><th>합계</th>
         </tr>"""
     for _, r in period_df.iterrows():
