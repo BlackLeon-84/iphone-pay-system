@@ -24,7 +24,6 @@ init_db()
 
 # --- 설정 및 로그인 ---
 STAFF_LIST = ["성훈", "남근"]
-INCEN_PER_CASE = 1000  # <--- 건당 인센티브 금액 (여기서 수정하세요!)
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -68,26 +67,41 @@ df = load_data(user_name)
 existing_row = df[df["날짜"] == str_date]
 is_edit = not existing_row.empty
 
-# --- 건바이건 인센티브 계산 로직 (세션 상태 활용) ---
-if "incen_count" not in st.session_state or st.session_state.get("last_date") != str_date:
-    st.session_state.incen_count = int(existing_row.iloc[0]["인센티브"] // INCEN_PER_CASE) if is_edit else 0
+# --- 인센티브 합산 로직 (세션 상태 활용) ---
+if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
+    st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
+    st.session_state.incen_history = [] # 취소 기능을 위한 기록
     st.session_state.last_date = str_date
 
 # 입력 폼
 with st.form("input_form"):
     st.subheader("📝 실적 입력")
     
-    # 1. 인센티브 건수 조절 (건바이건)
-    st.write(f"💵 **인센티브 합계: {st.session_state.incen_count * INCEN_PER_CASE:,}원**")
-    col_inc1, col_inc2 = st.columns(2)
-    if col_inc1.form_submit_button("➕ 1건 추가"):
-        st.session_state.incen_count += 1
-        st.rerun()
-    if col_inc2.form_submit_button("➖ 1건 취소") and st.session_state.incen_count > 0:
-        st.session_state.incen_count -= 1
-        st.rerun()
+    # 1. 인센티브 직접 입력 및 합산
+    st.markdown(f"### 💵 현재 인센티브 총액: `{st.session_state.current_incen_sum:,}`원")
     
-    current_incen_total = st.session_state.incen_count * INCEN_PER_CASE
+    # 건별 금액 입력란
+    add_amount = st.number_input("추가할 인센티브 금액 입력", min_value=0, step=1000, value=1000)
+    
+    col_inc1, col_inc2, col_inc3 = st.columns([1, 1, 1])
+    
+    if col_inc1.form_submit_button("➕ 금액 추가"):
+        st.session_state.current_incen_sum += add_amount
+        st.session_state.incen_history.append(add_amount) # 기록 저장
+        st.rerun()
+        
+    if col_inc2.form_submit_button("↩️ 마지막 추가 취소"):
+        if st.session_state.incen_history:
+            last_added = st.session_state.incen_history.pop()
+            st.session_state.current_incen_sum -= last_added
+            st.rerun()
+        else:
+            st.warning("취소할 기록이 없습니다.")
+            
+    if col_inc3.form_submit_button("🧹 전체 초기화"):
+        st.session_state.current_incen_sum = 0
+        st.session_state.incen_history = []
+        st.rerun()
     
     st.divider()
     
@@ -99,17 +113,17 @@ with st.form("input_form"):
     v_c = c2.number_input("케이블", 0, value=int(existing_row.iloc[0]["케이블"]) if is_edit else 0)
     v_a = st.number_input("어댑터", 0, value=int(existing_row.iloc[0]["어댑터"]) if is_edit else 0)
     
-    save_btn = st.form_submit_button("✅ 최종 저장하기", use_container_width=True)
+    save_btn = st.form_submit_button("✅ 최종 저장하기 (하루치 제출)", use_container_width=True)
 
 if save_btn:
-    daily_sum = current_incen_total + (v_nf*9000) + (v_ff*18000) + (v_j*9000) + (v_c*15000) + (v_a*23000)
+    daily_sum = st.session_state.current_incen_sum + (v_nf*9000) + (v_ff*18000) + (v_j*9000) + (v_c*15000) + (v_a*23000)
     conn = get_connection()
     c = conn.cursor()
     c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-              (user_name, str_date, current_incen_total, v_nf, v_ff, v_j, v_c, v_a, daily_sum))
+              (user_name, str_date, st.session_state.current_incen_sum, v_nf, v_ff, v_j, v_c, v_a, daily_sum))
     conn.commit()
     conn.close()
-    st.success(f"저장 완료! (인센티브 {st.session_state.incen_count}건 적용)")
+    st.success(f"저장 완료! 총 {st.session_state.current_incen_sum:,}원이 반영되었습니다.")
     st.rerun()
 
 # --- 이하 정산 현황 로직 (동일) ---
@@ -137,6 +151,6 @@ if not df.empty:
         
         for index, row in period_df.iterrows():
             with st.expander(f"📅 {row['날짜']} (합계: {row['합계']:,}원)"):
-                st.write(f"🔹 **기본 인센**: {row['인센티브']:,}원 ({row['인센티브']//INCEN_PER_CASE}건)")
+                st.write(f"🔹 **기본 인센**: {row['인센티브']:,}원")
                 st.write(f"🔹 **필름**: 일반 {row['일반필름']} / 풀 {row['풀필름']}")
                 st.write(f"🔹 **기타**: 젤리 {row['젤리']} / 케이블 {row['케이블']} / 어댑터 {row['어댑터']}")
