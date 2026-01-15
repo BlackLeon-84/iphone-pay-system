@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 import sqlite3
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.1.3", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.1.4", layout="centered")
 
 # --- 데이터베이스 및 기본 설정 ---
 def get_connection():
@@ -79,32 +79,49 @@ settings = load_settings()
 item_names = settings['display_name'].tolist()
 item_prices = settings['price'].tolist()
 
-# --- CSS 설정 (디자인 최적화) ---
+# --- CSS 설정 (버튼 및 표 간섭 해결) ---
 st.markdown("""
     <style>
     .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }
-    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; gap: 5px !important; }
-    div[data-testid="stHorizontalBlock"] > div { flex: 1 1 0% !important; min-width: 0 !important; }
-    .stButton>button { width: 100% !important; height: 42px !important; padding: 0px !important; }
     
-    /* 리포트 표 최적화 스타일 */
+    /* 버튼 가로 정렬 강제 고정 */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        width: 100% !important;
+        gap: 5px !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div {
+        flex: 1 1 0% !important;
+        min-width: 0 !important;
+    }
+    .stButton>button {
+        width: 100% !important;
+        height: 42px !important;
+        padding: 0px !important;
+    }
+    
+    /* 하단 리포트 표 전용 스타일 */
     .report-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 10px; /* 폰트 유지 */
+        font-size: 10px;
         text-align: center;
-        table-layout: auto !important; /* 해결책 A: 자동 너비 조절 */
+        table-layout: auto !important;
+        margin-top: 10px;
     }
     .report-table th, .report-table td {
         border: 1px solid #eee;
-        padding: 4px 1px !important; /* 해결책 C: 좌우 여백 최소화 */
-        white-space: nowrap; /* 글자가 칸 안에서 절대 안잘리게 함 */
+        padding: 4px 1px !important;
+        white-space: nowrap;
     }
     .report-table th { background-color: #f8f9fa; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-st.markdown('<p class="version-text">v1.1.3-stable</p>', unsafe_allow_html=True)
+# 버전 표시 수정
+st.markdown('<p class="version-text">v1.1.4-ver</p>', unsafe_allow_html=True)
 
 # 1. 상단 날짜 및 휴무
 st.write(f"### 💼 {user_name}님 실적")
@@ -126,7 +143,6 @@ if top_c2.button("🌴 휴무", use_container_width=True):
 
 # 2. 최근 기입 현황
 st.write("**🗓️ 최근 기입 현황**")
-# (생략: 기존과 동일한 HTML 테이블)
 table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
 for i in range(7):
     d = date.today() - timedelta(days=6-i)
@@ -146,7 +162,7 @@ st.markdown(table_html, unsafe_allow_html=True)
 
 st.divider()
 
-# 3. 인센티브 입력 (기본값 0)
+# 3. 인센티브 입력
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
@@ -187,7 +203,7 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 리포트 (표 개선)
+# 5. 정산 리포트
 st.divider()
 st.subheader("📊 정산 및 제출 리포트")
 BASE_SALARY, INSURANCE = 3500000, 104760
@@ -213,7 +229,6 @@ if not period_df.empty:
         </div>
     """, unsafe_allow_html=True)
     
-    # 최적화된 표 HTML
     html_code = f"""<table class="report-table">
         <tr>
             <th style="width:35px;">날짜</th>
@@ -228,19 +243,7 @@ if not period_df.empty:
     for _, r in period_df.iterrows():
         d_val = datetime.strptime(r['날짜'], "%Y-%m-%d")
         short_date = f"{d_val.day}일"
-        
-        html_code += f"<tr><td>{short_date}</td>"
-        html_code += f"<td>{r['인센티브']:,}</td>"
-        html_code += f"<td>{r['일반필름']}</td>"
-        html_code += f"<td>{r['풀필름']}</td>"
-        html_code += f"<td>{r['젤리']}</td>"
-        html_code += f"<td>{r['케이블']}</td>"
-        html_code += f"<td>{r['어댑터']}</td>"
-        html_code += f"<td style='font-weight:bold;'>{r['합계']:,}</td></tr>"
+        html_code += f"<tr><td>{short_date}</td><td>{r['인센티브']:,}</td><td>{r['일반필름']}</td><td>{r['풀필름']}</td><td>{r['젤리']}</td><td>{r['케이블']}</td><td>{r['어댑터']}</td><td style='font-weight:bold;'>{r['합계']:,}</td></tr>"
     
-    html_code += f"<tr style='background-color:#fff3f3; font-weight:bold;'><td>합계</td>"
-    html_code += f"<td>{period_df['인센티브'].sum():,}</td><td>{period_df['일반필름'].sum()}</td>"
-    html_code += f"<td>{period_df['풀필름'].sum()}</td><td>{period_df['젤리'].sum()}</td>"
-    html_code += f"<td>{period_df['케이블'].sum()}</td><td>{period_df['어댑터'].sum()}</td>"
-    html_code += f"<td style='color:#ff4b4b;'>{total_extra:,}</td></tr></table>"
+    html_code += f"<tr style='background-color:#fff3f3; font-weight:bold;'><td>합계</td><td>{period_df['인센티브'].sum():,}</td><td>{period_df['일반필름'].sum()}</td><td>{period_df['풀필름'].sum()}</td><td>{period_df['젤리'].sum()}</td><td>{period_df['케이블'].sum()}</td><td>{period_df['어댑터'].sum()}</td><td style='color:#ff4b4b;'>{total_extra:,}</td></tr></table>"
     st.markdown(html_code, unsafe_allow_html=True)
