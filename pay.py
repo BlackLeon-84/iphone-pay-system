@@ -36,7 +36,7 @@ if not st.session_state.logged_in:
     st.title("🔐 로그인")
     with st.form("login_form"):
         user_id = st.selectbox("직원 선택", options=STAFF_LIST)
-        if st.form_submit_button("입장하기", use_container_width=True):
+        if st.form_submit_button("입장하기"):
             st.session_state.logged_in = True
             st.session_state.user_name = user_id
             st.rerun()
@@ -44,127 +44,137 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 가로 정렬 강제 CSS (심플 버전) ---
-st.markdown("<style>div[data-testid='stHorizontalBlock']{display:flex!important;flex-direction:row!important;gap:5px!important;}</style>", unsafe_allow_html=True)
+# --- 가로 정렬 강제 CSS (기존 디자인 유지용) ---
+st.markdown("""
+    <style>
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 5px !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div {
+        flex: 1 1 0% !important;
+        min-width: 0 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# 1. 최상단: 날짜 및 휴무
-st.write(f"### 💼 {user_name}님 실적")
-top_c1, top_c2 = st.columns([2, 1])
-selected_date = top_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
-str_date = selected_date.strftime("%Y-%m-%d")
+# --- 상단 메뉴 분리 ---
+menu = st.radio("📍 메뉴 선택", ["📝 실적 기입", "📸 제출용 스샷"], horizontal=True)
 
 df_all = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(), params=(user_name,))
-existing_row = df_all[df_all["날짜"] == str_date]
-is_edit = not existing_row.empty
 
-if top_c2.button("🌴 휴무", use_container_width=True):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''', (user_name, str_date, "휴무"))
-    conn.commit()
-    conn.close()
-    st.rerun()
+# 1. [📝 실적 기입 모드] - 태완님이 쓰시던 기존 디자인 100% 복구
+if menu == "📝 실적 기입":
+    st.write(f"### 💼 {user_name}님 실적")
+    
+    # 날짜 및 휴무
+    top_c1, top_c2 = st.columns([2, 1])
+    selected_date = top_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
+    str_date = selected_date.strftime("%Y-%m-%d")
+    
+    existing_row = df_all[df_all["날짜"] == str_date]
+    is_edit = not existing_row.empty
+    
+    if top_c2.button("🌴 휴무", use_container_width=True):
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''', (user_name, str_date, "휴무"))
+        conn.commit()
+        conn.close()
+        st.rerun()
 
-st.divider()
+    # [복구] 최근 기입 현황 (동그라미 표)
+    st.write("**🗓️ 최근 기입 현황**")
+    table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
+    for i in range(7):
+        d = date.today() - timedelta(days=6-i)
+        table_html += f"<th style='border:1px solid #ddd; padding:5px; font-size:10px; text-align:center;'>{d.day}일</th>"
+    table_html += "</tr><tr>"
+    for i in range(7):
+        d = date.today() - timedelta(days=6-i)
+        str_check = d.strftime("%Y-%m-%d")
+        target_row = df_all[df_all["날짜"] == str_check]
+        icon, bg = "⚪", "#ffffff"
+        if not target_row.empty:
+            if target_row.iloc[0]["비고"] == "휴무": icon, bg = "💤", "#e1f5fe"
+            else: icon, bg = "✅", "#e8f5e9"
+        table_html += f f"<td style='border:1px solid #ddd; padding:8px; text-align:center; background-color:{bg}; font-size:16px;'>{icon}</td>"
+    table_html += "</tr></table>"
+    st.markdown(table_html, unsafe_allow_html=True)
 
-# 2. 인센티브 입력 및 가로 버튼
-if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
-    st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
-    st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
-    st.session_state.last_date = str_date
+    st.divider()
 
-st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
-add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=1000, label_visibility="collapsed")
+    # 인센티브 섹션 (가로 버튼 복구)
+    if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
+        st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
+        st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
+        st.session_state.last_date = str_date
 
-btn_c1, btn_c2, btn_c3 = st.columns(3)
-if btn_c1.button("➕ 추가", use_container_width=True):
-    st.session_state.current_incen_sum += add_amount
-    st.session_state.incen_history.append(add_amount)
-    st.rerun()
-if btn_c2.button("↩️ 취소", use_container_width=True) and st.session_state.incen_history:
-    st.session_state.current_incen_sum -= st.session_state.incen_history.pop()
-    st.rerun()
-if btn_c3.button("🧹 리셋", use_container_width=True):
-    st.session_state.current_incen_sum = 0
-    st.session_state.incen_history = []
-    st.rerun()
+    st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
+    add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=1000, label_visibility="collapsed")
+    
+    btn_c1, btn_c2, btn_c3 = st.columns(3)
+    if btn_c1.button("➕ 추가", use_container_width=True):
+        st.session_state.current_incen_sum += add_amount
+        st.session_state.incen_history.append(add_amount)
+        st.rerun()
+    if btn_c2.button("↩️ 취소", use_container_width=True) and st.session_state.incen_history:
+        st.session_state.current_incen_sum -= st.session_state.incen_history.pop()
+        st.rerun()
+    if btn_c3.button("🧹 리셋", use_container_width=True):
+        st.session_state.current_incen_sum = 0
+        st.session_state.incen_history = []
+        st.rerun()
 
-# 3. 필름 및 기타 항목 (2열)
-f_c1, f_c2 = st.columns(2)
-v_nf = f_c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
-v_ff = f_c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
-v_j = f_c1.number_input("젤리", 0, value=int(existing_row.iloc[0]["젤리"]) if is_edit else 0)
-v_c = f_c2.number_input("케이블", 0, value=int(existing_row.iloc[0]["케이블"]) if is_edit else 0)
-v_a = st.number_input("어댑터", 0, value=int(existing_row.iloc[0]["어댑터"]) if is_edit else 0)
+    # 판매 수량 (2열 유지)
+    f_c1, f_c2 = st.columns(2)
+    v_nf = f_c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
+    v_ff = f_c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
+    v_j = f_c1.number_input("젤리", 0, value=int(existing_row.iloc[0]["젤리"]) if is_edit else 0)
+    v_c = f_c2.number_input("케이블", 0, value=int(existing_row.iloc[0]["케이블"]) if is_edit else 0)
+    v_a = st.number_input("어댑터", 0, value=int(existing_row.iloc[0]["어댑터"]) if is_edit else 0)
 
-if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary"):
-    daily_sum = st.session_state.current_incen_sum + (v_nf*9000) + (v_ff*18000) + (v_j*9000) + (v_c*15000) + (v_a*23000)
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (user_name, str_date, st.session_state.current_incen_sum, v_nf, v_ff, v_j, v_c, v_a, daily_sum, "정상"))
-    conn.commit()
-    conn.close()
-    st.success("저장 성공!")
-    st.rerun()
+    if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary"):
+        daily_sum = st.session_state.current_incen_sum + (v_nf*9000) + (v_ff*18000) + (v_j*9000) + (v_c*15000) + (v_a*23000)
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (user_name, str_date, st.session_state.current_incen_sum, v_nf, v_ff, v_j, v_c, v_a, daily_sum, "정상"))
+        conn.commit()
+        conn.close()
+        st.success("저장 성공!")
+        st.rerun()
 
-# 4. 정산 현황 및 제출용 표
-st.divider()
-st.subheader("📊 정산 및 제출용")
-BASE_SALARY, INSURANCE = 3500000, 104760
-
-if selected_date.day >= 13:
-    start_dt = date(selected_date.year, selected_date.month, 13)
-    next_month = selected_date.replace(day=28) + timedelta(days=20)
-    end_dt = next_month.replace(day=12)
+# 2. [📸 제출용 스샷 모드] - 오직 제출용 상세 표만 깨끗하게 출력
 else:
-    end_dt = selected_date.replace(day=12)
-    last_month = selected_date.replace(day=1) - timedelta(days=10)
-    start_dt = last_month.replace(day=13)
-
-df_now = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(), params=(user_name,))
-if not df_now.empty:
-    df_now['날짜_dt'] = pd.to_datetime(df_now['날짜']).dt.date
-    period_df = df_now[(df_now['날짜_dt'] >= start_dt) & (df_now['날짜_dt'] <= end_dt)].sort_values("날짜", ascending=True)
+    st.write(f"### 📸 {user_name}님 제출용 리포트")
+    
+    report_date = st.date_input("기준 날짜", value=date.today())
+    if report_date.day >= 13:
+        start_dt, end_dt = date(report_date.year, report_date.month, 13), (report_date.replace(day=28) + timedelta(days=20)).replace(day=12)
+    else:
+        end_dt, start_dt = report_date.replace(day=12), (report_date.replace(day=1) - timedelta(days=10)).replace(day=13)
+    
+    period_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
     
     if not period_df.empty:
         total_extra = period_df["합계"].sum()
-        final_pay = int(BASE_SALARY + total_extra - INSURANCE)
+        final_pay = int(3500000 + total_extra - 104760)
         
-        # --- [수정] 실수령액 글자 크게 표시 ---
-        st.write(f"**💰 이번 달 수당 합계: {total_extra:,}원**")
-        st.metric(label="🏦 예상 실수령액 (기본급 포함)", value=f"{final_pay:,}원")
+        # [스샷용 강조]
+        st.write(f"**💰 누적 수당 합계: {total_extra:,}원**")
+        st.metric(label="🏦 예상 실수령액", value=f"{final_pay:,}원")
         
-        st.write("**📄 제출용 상세 (스샷용)**")
-        
-        # 데이터 가공
+        # [스샷 최적화 표]
         rep_df = period_df.copy()
         rep_df['날짜'] = rep_df['날짜'].apply(lambda x: x[5:])
         rep_df = rep_df[['날짜', '인센티브', '일반필름', '풀필름', '젤리', '케이블', '어댑터', '합계']]
         rep_df.columns = ['날짜', '인센', '일', '풀', '젤', '케', '어', '합계']
         
-        # --- [수정] 콤마 자동 적용 및 열 너비 초소형화 ---
-        st.dataframe(
-            rep_df,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "날짜": st.column_config.TextColumn("날짜", width="small"),
-                "인센": st.column_config.NumberColumn("인센", format="%d", width="small"),
-                "일": st.column_config.NumberColumn("일", width="small"),
-                "풀": st.column_config.NumberColumn("풀", width="small"),
-                "젤": st.column_config.NumberColumn("젤", width="small"),
-                "케": st.column_config.NumberColumn("케", width="small"),
-                "어": st.column_config.NumberColumn("어", width="small"),
-                "합계": st.column_config.NumberColumn("합계", format="%d", width="medium"),
-            }
-        )
-
-        st.divider()
-        for _, row in period_df.sort_values("날짜", ascending=False).iterrows():
-            is_off = row['비고'] == "휴무"
-            title = f"📅 {row['날짜']} ({row['합계']:,}원)" if not is_off else f"📅 {row['날짜']} (🌴 휴무)"
-            with st.expander(title):
-                if is_off: st.write("휴무")
-                else:
-                    st.write(f"🔹 인센: {row['인센티브']:,}원 | 필름: {row['일반필름']}/{row['풀필름']}")
-                    st.write(f"🔹 젤리: {row['젤리']} / 케이블: {row['케이블']} / 어댑터: {row['어댑터']}")
+        rep_df['인센'] = rep_df['인센'].apply(lambda x: f"{x:,}")
+        rep_df['합계'] = rep_df['합계'].apply(lambda x: f"{x:,}")
+        
+        st.table(rep_df)
+    else:
+        st.warning("데이터가 없습니다.")
