@@ -13,7 +13,6 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    # '비고' 컬럼 유무 확인 및 테이블 갱신
     try:
         c.execute("SELECT 비고 FROM salary LIMIT 1")
     except sqlite3.OperationalError:
@@ -38,7 +37,7 @@ if "logged_in" not in st.session_state:
 if not st.session_state.logged_in:
     st.title("🔐 테스트용 로그인")
     with st.form("login_form"):
-        user_id = st.selectbox("테스트할 직원을 선택하세요", options=STAFF_LIST)
+        user_id = st.selectbox("직원을 선택하세요", options=STAFF_LIST)
         login_btn = st.form_submit_button("입장하기", use_container_width=True)
         if login_btn:
             st.session_state.logged_in = True
@@ -58,7 +57,7 @@ INSURANCE = 104760
 
 st.title(f"💼 {user_name}님 정산")
 
-# 1. 데이터 로드 함수
+# 1. 데이터 로드
 def load_data(name):
     conn = get_connection()
     df = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", conn, params=(name,))
@@ -67,29 +66,52 @@ def load_data(name):
 
 df_all = load_data(user_name)
 
-# 2. 날짜 선택 및 기입 상태 확인 달력
-selected_date = st.date_input("📅 날짜 선택", value=date.today())
-str_date = selected_date.strftime("%Y-%m-%d")
+# 2. 상단 날짜 배지 (디자인 개선)
+st.subheader("🗓️ 최근 1주일 현황")
+badge_cols = st.columns(7)
 
-st.caption("🗓️ 최근 7일 기입 현황 (✅완료 | 💤휴무 | ⚠️미기입)")
-cols = st.columns(7)
 for i in range(7):
     check_date = date.today() - timedelta(days=6-i)
     str_check = check_date.strftime("%Y-%m-%d")
-    status = "⚠️"
+    
     target_row = df_all[df_all["날짜"] == str_check]
     
+    # 상태 판별 및 색상 설정
     if not target_row.empty:
-        status = "💤" if target_row.iloc[0]["비고"] == "휴무" else "✅"
-    
-    with cols[i]:
-        color = "blue" if status == "💤" else ("green" if status == "✅" else "red")
-        st.markdown(f"<p style='text-align:center; font-size:12px; margin-bottom:0;'>{check_date.day}일</p>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align:center; font-size:20px; color:{color}; margin-top:0;'>{status}</p>", unsafe_allow_html=True)
+        if target_row.iloc[0]["비고"] == "휴무":
+            bg_color, label = "#E1F5FE", "💤" # 파랑 (휴무)
+            text_color = "#01579B"
+        else:
+            bg_color, label = "#E8F5E9", "✅" # 초록 (완료)
+            text_color = "#1B5E20"
+    else:
+        bg_color, label = "#FFEBEE", "⚠️" # 빨강 (미기입)
+        text_color = "#B71C1C"
+
+    with badge_cols[i]:
+        # HTML/CSS를 이용한 카드형 배지 디자인
+        st.markdown(
+            f"""
+            <div style="
+                background-color: {bg_color};
+                border-radius: 10px;
+                padding: 10px 5px;
+                text-align: center;
+                border: 1px solid {text_color}33;
+            ">
+                <p style="margin:0; font-size:11px; color:{text_color}; font-weight:bold;">{check_date.strftime('%m/%d')}</p>
+                <p style="margin:2px 0; font-size:18px;">{label}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 st.divider()
 
-# 3. 세션 상태 초기화 (날짜가 바뀌면 리셋)
+# 3. 날짜 선택 및 입력 세션 관리
+selected_date = st.date_input("📅 날짜 선택 (기입/수정)", value=date.today())
+str_date = selected_date.strftime("%Y-%m-%d")
+
 existing_row = df_all[df_all["날짜"] == str_date]
 is_edit = not existing_row.empty
 is_off = is_edit and existing_row.iloc[0]["비고"] == "휴무"
@@ -102,16 +124,14 @@ if "current_incen_sum" not in st.session_state or st.session_state.get("last_dat
 # 4. 입력 폼
 with st.form("input_form"):
     if is_off:
-        st.info(f"🌴 {str_date}은 현재 '휴무'로 설정되어 있습니다.")
+        st.info(f"🌴 {str_date}은 '휴무' 상태입니다.")
     
-    st.subheader("📝 실적 입력")
-    st.markdown(f"### 💵 인센티브 총액: `{st.session_state.current_incen_sum:,}`원")
-    
+    st.markdown(f"### 💵 인센 합계: `{st.session_state.current_incen_sum:,}`원")
     if st.session_state.incen_history:
         st.caption(f"🕒 내역: {' > '.join([f'{amt:,}' for amt in st.session_state.incen_history])}")
 
-    add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=1000)
-    c_inc1, c_inc2, c_inc3 = st.columns([1, 1, 1])
+    add_amount = st.number_input("추가 금액", min_value=0, step=1000, value=1000)
+    c_inc1, c_inc2, c_inc3 = st.columns(3)
     if c_inc1.form_submit_button("➕ 추가"):
         st.session_state.current_incen_sum += add_amount
         st.session_state.incen_history.append(add_amount)
@@ -133,8 +153,8 @@ with st.form("input_form"):
     v_a = st.number_input("어댑터", 0, value=int(existing_row.iloc[0]["어댑터"]) if is_edit else 0)
     
     save_col, off_col = st.columns([2, 1])
-    save_btn = save_col.form_submit_button("✅ 실적 저장하기", use_container_width=True)
-    off_btn = off_col.form_submit_button("🌴 휴무 설정", use_container_width=True)
+    save_btn = save_col.form_submit_button("✅ 실적 저장", use_container_width=True)
+    off_btn = off_col.form_submit_button("🌴 휴무", use_container_width=True)
 
 # 5. 저장 로직
 if save_btn or off_btn:
@@ -149,10 +169,9 @@ if save_btn or off_btn:
                   (user_name, str_date, st.session_state.current_incen_sum, v_nf, v_ff, v_j, v_c, v_a, daily_sum, "정상"))
     conn.commit()
     conn.close()
-    st.success("반영되었습니다!")
     st.rerun()
 
-# --- 6. 정산 현황 ---
+# 6. 정산 현황
 st.divider()
 st.subheader("📊 정산 현황")
 if selected_date.day >= 13:
@@ -177,13 +196,9 @@ if not df_now.empty:
         
         for idx, row in period_df.iterrows():
             is_off_row = row['비고'] == "휴무"
-            title = f"📅 {row['날짜']} " + ("(🌴 휴무)" if is_off_row else f"(합계: {row['합계']:,}원)")
+            title = f"📅 {row['날짜']} " + ("(🌴 휴무)" if is_off_row else f"({row['합계']:,}원)")
             with st.expander(title):
-                if is_off_row:
-                    st.write("이날은 휴무로 기록되었습니다.")
+                if is_off_row: st.write("휴무")
                 else:
-                    st.write(f"🔹 **기본 인센**: {row['인센티브']:,}원")
-                    st.write(f"🔹 **필름**: 일반 {row['일반필름']} / 풀 {row['풀필름']}")
-                    st.write(f"🔹 **기타**: 젤리 {row['젤리']} / 케이블 {row['케이블']} / 어댑터 {row['어댑터']}")
-    else:
-        st.info("이 기간의 데이터가 없습니다.")
+                    st.write(f"🔹 **인센**: {row['인센티브']:,}원 | **필름**: {row['일반필름']}/{row['풀필름']}")
+                    st.write(f"🔹 **기타**: 젤리{row['젤리']} 케이블{row['케이블']} 어댑터{row['어댑터']}")
