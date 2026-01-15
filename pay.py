@@ -27,19 +27,17 @@ def init_db():
 
 init_db()
 
-# --- 설정 및 로그인 ---
+# --- 로그인 ---
 STAFF_LIST = ["성훈", "남근"]
-
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.user_name = ""
 
 if not st.session_state.logged_in:
-    st.title("🔐 테스트용 로그인")
+    st.title("🔐 로그인")
     with st.form("login_form"):
-        user_id = st.selectbox("직원을 선택하세요", options=STAFF_LIST)
-        login_btn = st.form_submit_button("입장하기", use_container_width=True)
-        if login_btn:
+        user_id = st.selectbox("직원 선택", options=STAFF_LIST)
+        if st.form_submit_button("입장하기", use_container_width=True):
             st.session_state.logged_in = True
             st.session_state.user_name = user_id
             st.rerun()
@@ -47,17 +45,14 @@ if not st.session_state.logged_in:
 
 # --- 메인 로직 ---
 user_name = st.session_state.user_name
-st.sidebar.title(f"👋 {user_name}님")
-if st.sidebar.button("로그아웃"):
-    st.session_state.logged_in = False
-    st.rerun()
 
-BASE_SALARY = 3500000
-INSURANCE = 104760
+# 1. 최상단: 날짜 선택 및 휴무 버튼 (가로 배치)
+st.subheader("📅 날짜 설정")
+date_col, off_col = st.columns([2, 1])
+selected_date = date_col.date_input("날짜 선택", value=date.today(), label_visibility="collapsed")
+str_date = selected_date.strftime("%Y-%m-%d")
 
-st.title(f"💼 {user_name}님 정산")
-
-# 1. 데이터 로드
+# 데이터 로드
 def load_data(name):
     conn = get_connection()
     df = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", conn, params=(name,))
@@ -65,86 +60,84 @@ def load_data(name):
     return df
 
 df_all = load_data(user_name)
-
-# 2. 상단 날짜 배지 (디자인 개선)
-st.subheader("🗓️ 최근 1주일 현황")
-badge_cols = st.columns(7)
-
-for i in range(7):
-    check_date = date.today() - timedelta(days=6-i)
-    str_check = check_date.strftime("%Y-%m-%d")
-    
-    target_row = df_all[df_all["날짜"] == str_check]
-    
-    # 상태 판별 및 색상 설정
-    if not target_row.empty:
-        if target_row.iloc[0]["비고"] == "휴무":
-            bg_color, label = "#E1F5FE", "💤" # 파랑 (휴무)
-            text_color = "#01579B"
-        else:
-            bg_color, label = "#E8F5E9", "✅" # 초록 (완료)
-            text_color = "#1B5E20"
-    else:
-        bg_color, label = "#FFEBEE", "⚠️" # 빨강 (미기입)
-        text_color = "#B71C1C"
-
-    with badge_cols[i]:
-        # HTML/CSS를 이용한 카드형 배지 디자인
-        st.markdown(
-            f"""
-            <div style="
-                background-color: {bg_color};
-                border-radius: 10px;
-                padding: 10px 5px;
-                text-align: center;
-                border: 1px solid {text_color}33;
-            ">
-                <p style="margin:0; font-size:11px; color:{text_color}; font-weight:bold;">{check_date.strftime('%m/%d')}</p>
-                <p style="margin:2px 0; font-size:18px;">{label}</p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-st.divider()
-
-# 3. 날짜 선택 및 입력 세션 관리
-selected_date = st.date_input("📅 날짜 선택 (기입/수정)", value=date.today())
-str_date = selected_date.strftime("%Y-%m-%d")
-
 existing_row = df_all[df_all["날짜"] == str_date]
 is_edit = not existing_row.empty
 is_off = is_edit and existing_row.iloc[0]["비고"] == "휴무"
 
+# 휴무 버튼을 상단에 배치
+if off_col.button("🌴 휴무", use_container_width=True):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''',
+              (user_name, str_date, "휴무"))
+    conn.commit()
+    conn.close()
+    st.rerun()
+
+# 2. 최근 현황 (슬림한 2줄 배치)
+st.write("")
+badge_data = []
+for i in range(8): # 오늘 포함 8일치
+    check_date = date.today() - timedelta(days=7-i)
+    str_check = check_date.strftime("%Y-%m-%d")
+    target_row = df_all[df_all["날짜"] == str_check]
+    
+    status = "⚠️"
+    bg = "#FFEBEE"
+    if not target_row.empty:
+        if target_row.iloc[0]["비고"] == "휴무":
+            status, bg = "💤", "#E1F5FE"
+        else:
+            status, bg = "✅", "#E8F5E9"
+    badge_data.append({"day": check_date.day, "status": status, "bg": bg})
+
+# 4개씩 2줄로 표시
+row1 = st.columns(4)
+row2 = st.columns(4)
+for idx, item in enumerate(badge_data):
+    target_row = row1 if idx < 4 else row2
+    with target_row[idx % 4]:
+        st.markdown(f"""
+            <div style="background-color:{item['bg']}; border-radius:5px; padding:2px; text-align:center; border:1px solid #ddd; margin-bottom:5px;">
+                <p style="margin:0; font-size:10px;">{item['day']}일</p>
+                <p style="margin:0; font-size:14px;">{item['status']}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+st.divider()
+
+# 3. 입력 세션 관리
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
     st.session_state.last_date = str_date
 
-# 4. 입력 폼
-with st.form("input_form"):
-    if is_off:
-        st.info(f"🌴 {str_date}은 '휴무' 상태입니다.")
+# 4. 실적 입력 (압축형)
+with st.container():
+    if is_off: st.warning(f"현재 {str_date}은 '휴무'입니다.")
     
-    st.markdown(f"### 💵 인센 합계: `{st.session_state.current_incen_sum:,}`원")
+    st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
     if st.session_state.incen_history:
-        st.caption(f"🕒 내역: {' > '.join([f'{amt:,}' for amt in st.session_state.incen_history])}")
+        st.caption(f"📜 {' > '.join([f'{amt:,}' for amt in st.session_state.incen_history])}")
 
-    add_amount = st.number_input("추가 금액", min_value=0, step=1000, value=1000)
-    c_inc1, c_inc2, c_inc3 = st.columns(3)
-    if c_inc1.form_submit_button("➕ 추가"):
+    add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=1000, label_visibility="collapsed")
+    
+    # 버튼 3개를 한 줄로 가로 정렬
+    btn_col1, btn_col2, btn_col3 = st.columns(3)
+    if btn_col1.button("➕ 추가", use_container_width=True):
         st.session_state.current_incen_sum += add_amount
         st.session_state.incen_history.append(add_amount)
         st.rerun()
-    if c_inc2.form_submit_button("↩️ 취소") and st.session_state.incen_history:
+    if btn_col2.button("↩️ 취소", use_container_width=True) and st.session_state.incen_history:
         st.session_state.current_incen_sum -= st.session_state.incen_history.pop()
         st.rerun()
-    if c_inc3.form_submit_button("🧹 리셋"):
+    if btn_col3.button("🧹 리셋", use_container_width=True):
         st.session_state.current_incen_sum = 0
         st.session_state.incen_history = []
         st.rerun()
-    
-    st.divider()
+
+    st.write("")
+    # 필름 및 기타 항목 (2열 압축)
     c1, c2 = st.columns(2)
     v_nf = c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
     v_ff = c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -152,28 +145,21 @@ with st.form("input_form"):
     v_c = c2.number_input("케이블", 0, value=int(existing_row.iloc[0]["케이블"]) if is_edit else 0)
     v_a = st.number_input("어댑터", 0, value=int(existing_row.iloc[0]["어댑터"]) if is_edit else 0)
     
-    save_col, off_col = st.columns([2, 1])
-    save_btn = save_col.form_submit_button("✅ 실적 저장", use_container_width=True)
-    off_btn = off_col.form_submit_button("🌴 휴무", use_container_width=True)
-
-# 5. 저장 로직
-if save_btn or off_btn:
-    conn = get_connection()
-    c = conn.cursor()
-    if off_btn:
-        c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''',
-                  (user_name, str_date, "휴무"))
-    else:
+    if st.button("✅ 실적 저장 완료", use_container_width=True, type="primary"):
         daily_sum = st.session_state.current_incen_sum + (v_nf*9000) + (v_ff*18000) + (v_j*9000) + (v_c*15000) + (v_a*23000)
+        conn = get_connection()
+        c = conn.cursor()
         c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                   (user_name, str_date, st.session_state.current_incen_sum, v_nf, v_ff, v_j, v_c, v_a, daily_sum, "정상"))
-    conn.commit()
-    conn.close()
-    st.rerun()
+        conn.commit()
+        conn.close()
+        st.success("저장되었습니다!")
+        st.rerun()
 
-# 6. 정산 현황
+# 5. 정산 현황 (하단 배치)
 st.divider()
-st.subheader("📊 정산 현황")
+st.subheader("📊 이번 달 현황")
+# (정산 기간 계산 로직은 이전과 동일)
 if selected_date.day >= 13:
     start_dt = date(selected_date.year, selected_date.month, 13)
     next_month = selected_date.replace(day=28) + timedelta(days=20)
@@ -183,22 +169,19 @@ else:
     last_month = selected_date.replace(day=1) - timedelta(days=10)
     start_dt = last_month.replace(day=13)
 
-df_now = load_data(user_name)
-if not df_now.empty:
-    df_now['날짜_dt'] = pd.to_datetime(df_now['날짜']).dt.date
-    period_df = df_now[(df_now['날짜_dt'] >= start_dt) & (df_now['날짜_dt'] <= end_dt)].sort_values("날짜", ascending=False)
+period_df = df_all.copy()
+if not period_df.empty:
+    period_df['날짜_dt'] = pd.to_datetime(period_df['날짜']).dt.date
+    period_df = period_df[(period_df['날짜_dt'] >= start_dt) & (period_df['날짜_dt'] <= end_dt)].sort_values("날짜", ascending=False)
     
     if not period_df.empty:
         total_extra = period_df["합계"].sum()
-        c_res1, c_res2 = st.columns(2)
-        c_res1.metric("누적 수당", f"{total_extra:,}원")
-        c_res2.metric("실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
+        st.metric("예상 실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
         
         for idx, row in period_df.iterrows():
             is_off_row = row['비고'] == "휴무"
-            title = f"📅 {row['날짜']} " + ("(🌴 휴무)" if is_off_row else f"({row['합계']:,}원)")
-            with st.expander(title):
+            with st.expander(f"{row['날짜']} " + ("(🌴)" if is_off_row else f"({row['합계']:,}원)")):
                 if is_off_row: st.write("휴무")
-                else:
-                    st.write(f"🔹 **인센**: {row['인센티브']:,}원 | **필름**: {row['일반필름']}/{row['풀필름']}")
-                    st.write(f"🔹 **기타**: 젤리{row['젤리']} 케이블{row['케이블']} 어댑터{row['어댑터']}")
+                else: st.write(f"인센:{row['인센티브']:,} | 필름:{row['일반필름']}/{row['풀필름']} | 기타:{row['젤리']}/{row['케이블']}/{row['어댑터']}")
+
+st.sidebar.button("로그아웃", on_click=lambda: st.session_state.update({"logged_in": False}))
