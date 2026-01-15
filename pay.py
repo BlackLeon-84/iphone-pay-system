@@ -25,10 +25,10 @@ st.title("💼 월급 정산 시스템 (13일 기준)")
 selected_date = st.date_input("근무 날짜 선택", value=date.today())
 str_date = selected_date.strftime("%Y-%m-%d")
 
-# 기존 데이터 확인
+# 기존 데이터 확인 (안전하게 문자열 비교)
 existing_row = pd.DataFrame()
 if not df.empty and '날짜' in df.columns:
-    existing_row = df[df["날짜"].astype(str) == str_date]
+    existing_row = df[df["날짜"].astype(str).str.contains(str_date, na=False)]
 
 is_edit = not existing_row.empty
 
@@ -57,7 +57,7 @@ if save_btn:
     }])
     
     if not df.empty and '날짜' in df.columns:
-        df = df[df["날짜"].astype(str) != str_date]
+        df = df[df["날짜"].astype(str).str.contains(str_date, na=False) == False]
     
     updated_df = pd.concat([df, new_data], ignore_index=True)
     
@@ -69,24 +69,33 @@ if save_btn:
     st.success(f"✅ {str_date} 데이터 저장 완료!")
     st.rerun()
 
-# 6. 정산 주기(13일~12일) 계산 (안전한 비교 로직)
+# 6. 정산 주기(13일~12일) 계산
 if selected_date.day >= 13:
     start_dt = date(selected_date.year, selected_date.month, 13)
-    end_dt = (start_dt + timedelta(days=32)).replace(day=12)
+    try:
+        end_dt = (start_dt + timedelta(days=32)).replace(day=12)
+    except: # 연말 처리
+        end_dt = date(selected_date.year + 1, 1, 12)
 else:
     end_dt = date(selected_date.year, selected_date.month, 12)
-    start_dt = (end_dt - timedelta(days=32)).replace(day=13)
+    try:
+        start_dt = (end_dt - timedelta(days=32)).replace(day=13)
+    except: # 연초 처리
+        start_dt = date(selected_date.year - 1, 12, 13)
 
 st.divider()
 st.subheader(f"📊 정산 현황 ({start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')})")
 
 if not df.empty and '날짜' in df.columns:
-    # 핵심 수정: 날짜 형식이 아닌 데이터는 NaT로 바꾸고 제거함
-    df['날짜_dt'] = pd.to_datetime(df['날짜'], errors='coerce').dt.date
-    df = df.dropna(subset=['날짜_dt'])
+    # 핵심: 모든 데이터를 날짜 객체로 강제 변환 (실패 시 NaT)
+    temp_df = df.copy()
+    temp_df['날짜_dt'] = pd.to_datetime(temp_df['날짜'], errors='coerce').dt.date
     
-    # 타입 일치 후 비교 (오류 방지)
-    period_df = df[(df['날짜_dt'] >= start_dt) & (df['날짜_dt'] <= end_dt)]
+    # NaT(변환실패) 데이터와 데이터가 없는 행 삭제
+    temp_df = temp_df.dropna(subset=['날짜_dt'])
+    
+    # 날짜 비교 (동일한 date 객체끼리 비교하여 TypeError 방지)
+    period_df = temp_df[(temp_df['날짜_dt'] >= start_dt) & (temp_df['날짜_dt'] <= end_dt)]
     
     if not period_df.empty:
         display_df = period_df.drop(columns=['날짜_dt']).sort_values("날짜", ascending=False)
