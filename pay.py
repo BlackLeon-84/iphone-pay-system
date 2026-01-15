@@ -44,7 +44,7 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 가로 정렬 강제 CSS (기존 디자인 유지용) ---
+# --- 가로 정렬 CSS (기존 디자인 유지) ---
 st.markdown("""
     <style>
     div[data-testid="stHorizontalBlock"] {
@@ -57,10 +57,13 @@ st.markdown("""
         flex: 1 1 0% !important;
         min-width: 0 !important;
     }
+    /* 테이블에서 인덱스(0, 1, 2...) 숨기기 */
+    thead tr th:first-child {display:none !important;}
+    tbody tr td:first-child {display:none !important;}
     </style>
     """, unsafe_allow_html=True)
 
-# 1. 최상단: 날짜 및 휴무
+# 1. 상단: 날짜 및 휴무
 st.write(f"### 💼 {user_name}님 실적")
 top_c1, top_c2 = st.columns([2, 1])
 selected_date = top_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
@@ -78,7 +81,7 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 2. 최근 기입 현황 (동그라미 현황)
+# 2. 최근 기입 현황
 st.write("**🗓️ 최근 기입 현황**")
 table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
 for i in range(7):
@@ -99,7 +102,7 @@ st.markdown(table_html, unsafe_allow_html=True)
 
 st.divider()
 
-# 3. 인센티브 입력 및 가로 버튼 (디자인 유지)
+# 3. 인센티브 입력 및 버튼
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
@@ -121,7 +124,7 @@ if btn_c3.button("🧹 리셋", use_container_width=True):
     st.session_state.incen_history = []
     st.rerun()
 
-# 4. 필름 및 기타 수량 입력
+# 4. 수량 입력
 f_c1, f_c2 = st.columns(2)
 v_nf = f_c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
 v_ff = f_c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -139,12 +142,11 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# --- 5. 정산 현황 및 상세 (기존 디자인 유지) ---
+# 5. 정산 현황 및 상세 (기존 유지)
 st.divider()
 st.subheader("📊 정산 현황")
 BASE_SALARY, INSURANCE = 3500000, 104760
 
-# 정산 기간 자동 계산
 if selected_date.day >= 13:
     start_dt, end_dt = date(selected_date.year, selected_date.month, 13), (selected_date.replace(day=28) + timedelta(days=20)).replace(day=12)
 else:
@@ -157,26 +159,34 @@ if not period_df.empty:
     final_pay = int(BASE_SALARY + total_extra - INSURANCE)
     
     st.write(f"**💰 누적 수당 합계: {total_extra:,}원**")
-    st.info(f"🏦 **예상 실수령액: {final_pay:,}원** (기본급 포함)")
+    st.info(f"🏦 **예상 실수령액: {final_pay:,}원**")
     
-    # [복구] 기존 아코디언 일별 기록 디자인
-    st.write("**📝 일별 상세 기록**")
-    for _, row in period_df.iterrows():
-        is_off = row['비고'] == "휴무"
-        title = f"📅 {row['날짜']} ({row['합계']:,}원)" if not is_off else f"📅 {row['날짜']} (🌴 휴무)"
-        with st.expander(title):
-            if is_off: st.write("휴무")
-            else:
-                st.write(f"🔹 인센: {row['인센티브']:,}원 | 필름: {row['일반필름']}/{row['풀필름']}")
-                st.write(f"🔹 젤리: {row['젤리']} / 케이블: {row['케이블']} / 어댑터: {row['어댑터']}")
+    with st.expander("📝 일별 상세 기록 확인"):
+        for _, row in period_df.iterrows():
+            is_off = row['비고'] == "휴무"
+            title = f"📅 {row['날짜']} ({row['합계']:,}원)" if not is_off else f"📅 {row['날짜']} (🌴 휴무)"
+            st.write(f"**{title}**")
+            if not is_off:
+                st.write(f"인센: {row['인센티브']:,} | 필름: {row['일반필름']}/{row['풀필름']} | 기타: {row['젤리']}/{row['케이블']}/{row['어댑터']}")
 
-# --- 6. 제출용 스샷 모드 (별도 추가) ---
+# 6. [최종] 제출용 스샷 모드
 st.divider()
 if st.checkbox("📸 사장님 제출용 스샷 화면 보기"):
-    st.subheader("📄 제출용 리포트")
-    st.metric(label="🏦 이번 달 실수령액 (세후)", value=f"{final_pay:,}원")
+    st.subheader("📄 정산 리포트")
     
-    rep_df = period_df.sort_values("날짜").copy() # 스샷용은 날짜순 정렬
+    # 실수령액 및 인센티브 합계 강조
+    st.markdown(f"""
+        <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #ff4b4b;">
+            <p style="margin:0; font-size:14px; color:#666;">정산 기간: {start_dt} ~ {end_dt}</p>
+            <p style="margin:5px 0; font-size:18px; font-weight:bold;">💰 총 수당(인센+판매): {total_extra:,}원</p>
+            <p style="margin:0; font-size:24px; font-weight:bold; color:#ff4b4b;">🏦 최종 실수령액: {final_pay:,}원</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.write("")
+    
+    # 테이블 가공 (인덱스 제거 및 한 글자 제목)
+    rep_df = period_df.sort_values("날짜").copy()
     rep_df['날짜'] = rep_df['날짜'].apply(lambda x: x[5:]) 
     rep_df = rep_df[['날짜', '인센티브', '일반필름', '풀필름', '젤리', '케이블', '어댑터', '합계']]
     rep_df.columns = ['날짜', '인센', '일', '풀', '젤', '케', '어', '합계']
@@ -184,5 +194,6 @@ if st.checkbox("📸 사장님 제출용 스샷 화면 보기"):
     for col in ['인센', '합계']:
         rep_df[col] = rep_df[col].apply(lambda x: f"{x:,}")
     
+    # st.table을 사용하면 인덱스가 기본적으로 나오지 않거나 제어가 쉬우며 너비가 고정됩니다.
     st.table(rep_df)
-    st.caption(f"정산 기간: {start_dt} ~ {end_dt}")
+    st.caption("위 화면을 캡처하여 제출하세요.")
