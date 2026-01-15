@@ -1,52 +1,73 @@
 import streamlit as st
 import pandas as pd
 
-# 1. 직원별 데이터베이스 (엑셀의 기본 정보를 여기에 설정)
-# 직원마다 시급과 직책수당 등이 다르므로 이 부분을 수정하며 관리합니다.
-STAFF_INFO = {
-    "직원 1": {"시급": 10030, "직책수당": 100000, "주휴대상": True},
-    "직원 2": {"시급": 11000, "직책수당": 0, "주휴대상": True},
-    "직원 3": {"시급": 10030, "직책수당": 50000, "주휴대상": False},
+# 페이지 설정 (아이폰 최적화)
+st.set_page_config(page_title="급여 정산 시스템", layout="centered")
+
+st.title("📱 직원 급여 정산 (25년 1월)")
+
+# 1. 직원별 고정 정보 설정 (엑셀 상단 기준)
+# 직원마다 보험료나 품목별 단가가 다르다면 이 부분을 수정하세요.
+staff_config = {
+    "기본설정": {
+        "보험료": 104760,
+        "단가": {
+            "일반필름": 9000,
+            "풀필름": 18000,
+            "젤리": 9000,
+            "케이블": 15000,
+            "어댑터": 23000
+        }
+    }
 }
 
-st.title("📅 2025년 1월 급여 정산")
+# 2. 입력 섹션
+st.header("🔢 오늘 판매/근무 입력")
 
-# 2. 아이폰 입력창
-with st.container():
-    name = st.selectbox("정산할 직원을 선택하세요", list(STAFF_INFO.keys()))
+with st.form("salary_form"):
+    date = st.date_input("날짜 선택")
+    incentive = st.number_input("기본 인센티브 (원)", min_value=0, step=1000)
     
+    st.subheader("📦 판매 개수 입력")
     col1, col2 = st.columns(2)
     with col1:
-        normal_hours = st.number_input("기본 근무 시간", min_value=0.0, value=160.0)
-        over_hours = st.number_input("연장 근무 시간 (1.5배)", min_value=0.0)
+        normal_f = st.number_input("일반필름 (개)", min_value=0, step=1)
+        full_f = st.number_input("풀필름 (개)", min_value=0, step=1)
+        jelly = st.number_input("젤리 (개)", min_value=0, step=1)
     with col2:
-        night_hours = st.number_input("야간 근무 시간 (0.5배)", min_value=0.0)
-        holiday_hours = st.number_input("휴일 근무 시간 (1.5배)", min_value=0.0)
+        cable = st.number_input("케이블 (개)", min_value=0, step=1)
+        adapter = st.number_input("어댑터 (개)", min_value=0, step=1)
+    
+    submitted = st.form_submit_button("정산하기")
 
-# 3. 엑셀 수식 그대로 계산
-info = STAFF_INFO[name]
-wage = info["시급"]
+# 3. 계산 로직 (엑셀 수식 반영)
+if submitted:
+    prices = staff_config["기본설정"]["단가"]
+    
+    # 품목별 합계 계산
+    film_total = (normal_f * prices["일반필름"]) + (full_f * prices["풀필름"])
+    acc_total = (jelly * prices["젤리"]) + (cable * prices["케이블"]) + (adapter * prices["어댑터"])
+    
+    # 총급여 계산
+    gross_pay = incentive + film_total + acc_total
+    
+    # 보험료 공제 (엑셀 기준)
+    insurance = staff_config["기본설정"]["보험료"]
+    net_pay = gross_pay - insurance
+    
+    # 4. 결과 출력
+    st.divider()
+    st.balloons()
+    st.success(f"### {date.strftime('%m월 %d일')} 정산 결과")
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("총 급여", f"{gross_pay:,}원")
+    c2.metric("보험료 공제", f"-{insurance:,}원")
+    c3.metric("실수령액", f"{max(0, net_pay):,}원")
 
-total_basic = normal_hours * wage
-total_over = over_hours * wage * 1.5
-total_night = night_hours * wage * 0.5
-total_holiday = holiday_hours * wage * 1.5
-# 주휴수당 (통상 1주 15시간 이상 시 발생 - 엑셀 로직 반영 가능)
-weekly_holiday_pay = (normal_hours / 40) * 8 * wage if info["주휴대상"] else 0
-
-total_before_tax = total_basic + total_over + total_night + total_holiday + weekly_holiday_pay + info["직책수당"]
-
-# 공제 (25년 요율 반영)
-emp_ins = int(total_before_tax * 0.009) # 고용보험 0.9%
-income_tax = int(total_before_tax * 0.03) # 소득세(간이세액표 대신 3.3% 혹은 엑셀 기준 적용)
-resident_tax = int(income_tax * 0.1) # 지방세
-
-net_pay = total_before_tax - (emp_ins + income_tax + resident_tax)
-
-# 4. 결과 보기
-st.metric(label="실수령액", value=f"{int(net_pay):,} 원")
-
-with st.expander("상세 내역 확인"):
-    st.write(f"기본급: {int(total_basic):,}원")
-    st.write(f"주휴수당: {int(weekly_holiday_pay):,}원")
-    st.write(f"세금 공제 총합: {int(emp_ins + income_tax + resident_tax):,}원")
+    # 상세 내역 표
+    detail_data = {
+        "항목": ["기본 인센티브", "필름 판매 합계", "액세서리 합계", "보험료"],
+        "금액": [f"{incentive:,}원", f"{film_total:,}원", f"{acc_total:,}원", f"-{insurance:,}원"]
+    }
+    st.table(pd.DataFrame(detail_data))
