@@ -44,7 +44,7 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 가로 정렬 CSS (기존 디자인 유지) ---
+# --- 가로 정렬 CSS (입력창 보호용) ---
 st.markdown("""
     <style>
     div[data-testid="stHorizontalBlock"] {
@@ -57,9 +57,6 @@ st.markdown("""
         flex: 1 1 0% !important;
         min-width: 0 !important;
     }
-    /* 테이블에서 인덱스(0, 1, 2...) 숨기기 */
-    thead tr th:first-child {display:none !important;}
-    tbody tr td:first-child {display:none !important;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -174,7 +171,7 @@ st.divider()
 if st.checkbox("📸 사장님 제출용 스샷 화면 보기"):
     st.subheader("📄 정산 리포트")
     
-    # 실수령액 및 인센티브 합계 강조
+    # 실수령액 및 인센티브 합계 강조 박스
     st.markdown(f"""
         <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #ff4b4b;">
             <p style="margin:0; font-size:14px; color:#666;">정산 기간: {start_dt} ~ {end_dt}</p>
@@ -185,7 +182,7 @@ if st.checkbox("📸 사장님 제출용 스샷 화면 보기"):
     
     st.write("")
     
-    # 테이블 가공 (인덱스 제거 및 한 글자 제목)
+    # 테이블 가공
     rep_df = period_df.sort_values("날짜").copy()
     rep_df['날짜'] = rep_df['날짜'].apply(lambda x: x[5:]) 
     rep_df = rep_df[['날짜', '인센티브', '일반필름', '풀필름', '젤리', '케이블', '어댑터', '합계']]
@@ -194,6 +191,7 @@ if st.checkbox("📸 사장님 제출용 스샷 화면 보기"):
     for col in ['인센', '합계']:
         rep_df[col] = rep_df[col].apply(lambda x: f"{x:,}")
     
-    # st.table을 사용하면 인덱스가 기본적으로 나오지 않거나 제어가 쉬우며 너비가 고정됩니다.
-    st.table(rep_df)
+    # [해결] hide_index=True를 사용하여 번호를 완벽히 제거 (뒤틀림 없음)
+    st.dataframe(rep_df, hide_index=True, use_container_width=True)
+    
     st.caption("위 화면을 캡처하여 제출하세요.")
