@@ -179,7 +179,7 @@ if st.checkbox("📸 사장님 제출용 스샷 화면 보기"):
     rep_df = period_df.sort_values("날짜").copy() # 스샷용은 날짜순 정렬
     rep_df['날짜'] = rep_df['날짜'].apply(lambda x: x[5:]) 
     rep_df = rep_df[['날짜', '인센티브', '일반필름', '풀필름', '젤리', '케이블', '어댑터', '합계']]
-    rep_df.columns = ['날짜', '인센', '일', '풀', '젤', '케', '어', '합계']
+    rep_df.columns = ['날짜', '인센', '일반', '풀필름', '젤리', '케이블', '어댑터', '합계']
     
     for col in ['인센', '합계']:
         rep_df[col] = rep_df[col].apply(lambda x: f"{x:,}")
