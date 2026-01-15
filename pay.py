@@ -63,7 +63,7 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 2. 최근 기입 현황 (가로 고정 표 - HTML 방식 유지하되 태그 보완)
+# 2. 최근 기입 현황 (가로 고정 표)
 st.write("**🗓️ 최근 기입 현황**")
 badge_html = "<table style='width:100%; border-collapse: collapse; table-layout: fixed;'><tr style='background-color: #f8f9fa;'>"
 for i in range(7):
@@ -137,9 +137,9 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 및 제출용 요약
+# 5. 정산 현황 및 제출용 전항목 표
 st.divider()
-st.subheader("📊 정산 및 제출용")
+st.subheader("📊 정산 현황")
 BASE_SALARY, INSURANCE = 3500000, 104760
 
 if selected_date.day >= 13:
@@ -162,20 +162,46 @@ if not df_now.empty:
         c_res1.metric("누적 수당", f"{total_extra:,}원")
         c_res2.metric("실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
         
-        # --- [수정 핵심] 제출용 요약 표 (항목 분리 + 년도 제거) ---
-        st.write("**📄 제출용 요약 (스샷용)**")
+        # --- [최종 핵심] 전항목 포함 제출용 표 (스샷용) ---
+        st.write("**📄 제출용 상세 요약 (스샷용)**")
         
-        # 데이터프레임 가공 (년도 제거 및 이름 축소)
-        report_df = period_df.copy()
-        report_df['날짜'] = report_df['날짜'].apply(lambda x: x[5:]) # '2026-01-15' -> '01-15'
-        report_df = report_df[['날짜', '인센티브', '일반필름', '풀필름', '합계']]
-        report_df.columns = ['날짜', '인센', '일반', '풀', '소계']
-        
-        # 깨짐 방지를 위해 Streamlit 내장 표 사용 (디자인은 깔끔하게 자동 조정됨)
-        st.table(report_df)
+        # HTML 표 시작 (폰트 사이즈 축소하여 가로 공간 확보)
+        report_html = """
+        <div style="width: 100%; overflow-x: auto;">
+        <table style="width:100%; border-collapse: collapse; font-size: 10px; text-align: center; border: 1px solid #dee2e6;">
+            <tr style="background-color: #f1f3f5; font-weight: bold;">
+                <th style="border: 1px solid #dee2e6; padding: 4px;">날짜</th>
+                <th style="border: 1px solid #dee2e6; padding: 4px;">인센</th>
+                <th style="border: 1px solid #dee2e6; padding: 4px;">일</th>
+                <th style="border: 1px solid #dee2e6; padding: 4px;">풀</th>
+                <th style="border: 1px solid #dee2e6; padding: 4px;">젤</th>
+                <th style="border: 1px solid #dee2e6; padding: 4px;">케</th>
+                <th style="border: 1px solid #dee2e6; padding: 4px;">어</th>
+                <th style="border: 1px solid #dee2e6; padding: 4px;">소계</th>
+            </tr>
+        """
+        for _, row in period_df.iterrows():
+            m_d = row['날짜'][5:] # 년도 제거
+            bg = "#ffffff" if row['비고'] != "휴무" else "#f8f9fa"
+            # 휴무일 경우 0 대신 빈칸이나 하이픈 처리
+            is_off = row['비고'] == "휴무"
+            report_html += f"""
+            <tr style="background-color: {bg};">
+                <td style="border: 1px solid #dee2e6; padding: 4px;">{m_d}</td>
+                <td style="border: 1px solid #dee2e6; padding: 4px;">{f"{row['인센티브']:,}" if not is_off else "-"}</td>
+                <td style="border: 1px solid #dee2e6; padding: 4px;">{row['일반필름'] if not is_off else ""}</td>
+                <td style="border: 1px solid #dee2e6; padding: 4px;">{row['풀필름'] if not is_off else ""}</td>
+                <td style="border: 1px solid #dee2e6; padding: 4px;">{row['젤리'] if not is_off else ""}</td>
+                <td style="border: 1px solid #dee2e6; padding: 4px;">{row['케이블'] if not is_off else ""}</td>
+                <td style="border: 1px solid #dee2e6; padding: 4px;">{row['어댑터'] if not is_off else ""}</td>
+                <td style="border: 1px solid #dee2e6; padding: 4px; font-weight:bold;">{f"{row['합계']:,}" if not is_off else "휴무"}</td>
+            </tr>
+            """
+        report_html += "</table></div>"
+        st.markdown(report_html, unsafe_allow_html=True)
 
         st.write("---")
-        # [기존 유지] 일별 상세 내역 (날짜순 정렬 보정)
+        # 기존 일별 상세 내역 유지
         for index, row in period_df.sort_values("날짜", ascending=False).iterrows():
             is_off_row = row['비고'] == "휴무"
             title = f"📅 {row['날짜']} " + ("(🌴 휴무)" if is_off_row else f"({row['합계']:,}원)")
