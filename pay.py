@@ -27,7 +27,7 @@ def init_db():
 
 init_db()
 
-# --- 로그인 (비밀번호 없음 테스트 버전) ---
+# --- 로그인 ---
 STAFF_LIST = ["성훈", "남근"]
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -46,7 +46,7 @@ if not st.session_state.logged_in:
 # --- 메인 로직 ---
 user_name = st.session_state.user_name
 
-# 1. 최상단: 날짜 선택 및 휴무 버튼 (가로 정렬)
+# 1. 최상단: 날짜 선택 및 휴무 버튼 (가로 배치)
 st.write(f"### 💼 {user_name}님 실적")
 top_c1, top_c2 = st.columns([2, 1])
 selected_date = top_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
@@ -73,33 +73,33 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 2. [요청반영] 1주일 현황 아이콘화 (가로 한 줄 배치)
-# 아이콘 형태로 아주 작게 배치하여 공간 절약
+# 2. [수정] 아이폰 가로 한 줄 강제 정렬 (CSS 적용)
 st.write("") 
-badge_cols = st.columns(7)
+badge_html = "<div style='display: flex; justify-content: space-between; gap: 4px;'>"
 for i in range(7):
     check_date = date.today() - timedelta(days=6-i)
     str_check = check_date.strftime("%Y-%m-%d")
     target_row = df_all[df_all["날짜"] == str_check]
     
-    icon, color, bg = "⚪", "#ccc", "#f0f0f0" # 미기입
+    icon, color, bg = "⚪", "#ccc", "#f0f0f0"
     if not target_row.empty:
         if target_row.iloc[0]["비고"] == "휴무":
             icon, color, bg = "💤", "#007bff", "#e1f5fe"
         else:
             icon, color, bg = "✅", "#28a745", "#e8f5e9"
     
-    with badge_cols[i]:
-        st.markdown(f"""
-            <div style="text-align:center; padding:5px 2px; background:{bg}; border-radius:5px; border:1px solid {color}55;">
-                <div style="font-size:10px; font-weight:bold; color:{color};">{check_date.day}</div>
-                <div style="font-size:12px;">{icon}</div>
-            </div>
-        """, unsafe_allow_html=True)
+    badge_html += f"""
+        <div style="flex: 1; text-align:center; padding:4px 0; background:{bg}; border-radius:5px; border:1px solid {color}55;">
+            <div style="font-size:9px; font-weight:bold; color:{color};">{check_date.day}</div>
+            <div style="font-size:12px;">{icon}</div>
+        </div>
+    """
+badge_html += "</div>"
+st.markdown(badge_html, unsafe_allow_html=True)
 
 st.divider()
 
-# 3. 인센티브 입력 섹션 (가로 버튼 배치)
+# 3. 입력 섹션
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
@@ -127,7 +127,7 @@ if btn_c3.button("🧹 리셋", use_container_width=True):
 
 st.write("")
 
-# 4. 필름 및 기타 (압축 2열)
+# 4. 필름 및 기타 (2열 배치 유지)
 with st.container():
     f_c1, f_c2 = st.columns(2)
     v_nf = f_c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
@@ -147,24 +147,44 @@ with st.container():
         st.success("저장 성공!")
         st.rerun()
 
-# 5. 하단 정산 (생략 가능하도록 접기 메뉴 활용)
+# --- 5. [복구] 기존 정산 현황 (상세 내역 노출) ---
 st.divider()
-with st.expander("📊 이번 달 정산 요약 정보 확인", expanded=True):
-    # 정산 기간 (13일~12일)
-    if selected_date.day >= 13:
-        start_dt = date(selected_date.year, selected_date.month, 13)
-        next_month = selected_date.replace(day=28) + timedelta(days=20)
-        end_dt = next_month.replace(day=12)
-    else:
-        end_dt = selected_date.replace(day=12)
-        last_month = selected_date.replace(day=1) - timedelta(days=10)
-        start_dt = last_month.replace(day=13)
+st.subheader("📊 정산 현황")
 
-    period_df = df_all.copy()
+BASE_SALARY = 3500000
+INSURANCE = 104760
+
+if selected_date.day >= 13:
+    start_dt = date(selected_date.year, selected_date.month, 13)
+    next_month = selected_date.replace(day=28) + timedelta(days=20)
+    end_dt = next_month.replace(day=12)
+else:
+    end_dt = selected_date.replace(day=12)
+    last_month = selected_date.replace(day=1) - timedelta(days=10)
+    start_dt = last_month.replace(day=13)
+
+df_now = load_data(user_name)
+if not df_now.empty:
+    df_now['날짜_dt'] = pd.to_datetime(df_now['날짜']).dt.date
+    period_df = df_now[(df_now['날짜_dt'] >= start_dt) & (df_now['날짜_dt'] <= end_dt)].sort_values("날짜", ascending=False)
+    
     if not period_df.empty:
-        period_df['날짜_dt'] = pd.to_datetime(period_df['날짜']).dt.date
-        period_df = period_df[(period_df['날짜_dt'] >= start_dt) & (period_df['날짜_dt'] <= end_dt)]
         total_extra = period_df["합계"].sum()
+        col_res1, col_res2 = st.columns(2)
+        col_res1.metric("누적 수당", f"{total_extra:,}원")
+        col_res2.metric("실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
         
-        st.metric("예상 실수령액", f"{int(3500000 + total_extra - 104760):,}원")
-        st.caption(f"기간: {start_dt} ~ {end_dt}")
+        st.write("---")
+        # 기존 카드형 리스트 (복구)
+        for index, row in period_df.iterrows():
+            is_off_row = row['비고'] == "휴무"
+            title = f"📅 {row['날짜']} " + ("(🌴 휴무)" if is_off_row else f"(합계: {row['합계']:,}원)")
+            with st.expander(title):
+                if is_off_row:
+                    st.write("이날은 휴무로 기록되었습니다.")
+                else:
+                    st.write(f"🔹 **기본 인센**: {row['인센티브']:,}원")
+                    st.write(f"🔹 **필름**: 일반 {row['일반필름']} / 풀 {row['풀필름']}")
+                    st.write(f"🔹 **기타**: 젤리 {row['젤리']} / 케이블 {row['케이블']} / 어댑터 {row['어댑터']}")
+    else:
+        st.info("기간 내 데이터가 없습니다.")
