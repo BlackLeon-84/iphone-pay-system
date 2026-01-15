@@ -79,13 +79,36 @@ settings = load_settings()
 item_names = settings['display_name'].tolist()
 item_prices = settings['price'].tolist()
 
-# --- CSS 설정 (버튼 정렬 고정) ---
+# --- CSS 설정 (버튼 폭 100% 채우기 및 간격 조정) ---
 st.markdown("""
     <style>
     .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }
-    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; gap: 5px !important; }
-    div[data-testid="stHorizontalBlock"] > div { flex: 1 1 0% !important; min-width: 0 !important; }
-    .stButton>button { width: 100% !important; height: 42px !important; padding: 0px !important; font-weight: bold; }
+    
+    /* 컬럼 컨테이너: 여백 제거 및 꽉 채우기 */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 2px !important; /* 버튼 사이 간격을 아주 좁게 설정 */
+        width: 100% !important;
+    }
+    
+    /* 개별 컬럼: 동일한 비율로 확장 */
+    div[data-testid="stHorizontalBlock"] > div {
+        flex: 1 1 0% !important;
+        min-width: 0 !important;
+        padding: 0 !important;
+    }
+    
+    /* 버튼 자체: 너비 100% 강제 */
+    .stButton>button {
+        width: 100% !important;
+        height: 45px !important;
+        padding: 0px !important;
+        font-weight: bold;
+        margin: 0 !important;
+    }
+    
     .report-table { width: 100%; border-collapse: collapse; font-size: 10px; text-align: center; }
     .report-table th, .report-table td { border: 1px solid #eee; padding: 4px 1px; }
     .report-table th { background-color: #f8f9fa; }
@@ -104,15 +127,16 @@ df_all = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(
 existing_row = df_all[df_all["날짜"] == str_date]
 is_edit = not existing_row.empty
 
-if top_c2.button("🌴 휴무", use_container_width=True):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''', (user_name, str_date, "휴무"))
-    conn.commit()
-    conn.close()
-    st.rerun()
+with top_c2:
+    if st.button("🌴 휴무"):
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''', (user_name, str_date, "휴무"))
+        conn.commit()
+        conn.close()
+        st.rerun()
 
-# --- [복구됨] 최근 기입 현황 메뉴 ---
+# 최근 기입 현황
 st.write("**🗓️ 최근 기입 현황**")
 table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
 for i in range(7):
@@ -142,18 +166,23 @@ if "current_incen_sum" not in st.session_state or st.session_state.get("last_dat
 st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
 add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
+# 버튼 3개를 꽉 차게 배치
 btn_c1, btn_c2, btn_c3 = st.columns(3)
-if btn_c1.button("➕ 추가"):
-    st.session_state.current_incen_sum += add_amount
-    st.session_state.incen_history.append(add_amount)
-    st.rerun()
-if btn_c2.button("↩️ 취소") and st.session_state.incen_history:
-    st.session_state.current_incen_sum -= st.session_state.incen_history.pop()
-    st.rerun()
-if btn_c3.button("🧹 리셋"):
-    st.session_state.current_incen_sum = 0
-    st.session_state.incen_history = []
-    st.rerun()
+with btn_c1:
+    if st.button("➕ 추가"):
+        st.session_state.current_incen_sum += add_amount
+        st.session_state.incen_history.append(add_amount)
+        st.rerun()
+with btn_c2:
+    if st.button("↩️ 취소"):
+        if st.session_state.incen_history:
+            st.session_state.current_incen_sum -= st.session_state.incen_history.pop()
+            st.rerun()
+with btn_c3:
+    if st.button("🧹 리셋"):
+        st.session_state.current_incen_sum = 0
+        st.session_state.incen_history = []
+        st.rerun()
 
 # 3. 수량 입력
 f_c1, f_c2 = st.columns(2)
@@ -189,7 +218,6 @@ period_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.
 if not period_df.empty:
     total_extra = period_df["합계"].sum()
     final_pay = int(BASE_SALARY + total_extra - INSURANCE)
-    
     st.markdown(f"**💰 총 수당: {total_extra:,}원 | 🏦 실수령: {final_pay:,}원**")
     
     html_code = f"""<table class="report-table">
