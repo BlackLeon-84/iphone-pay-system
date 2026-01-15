@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 import sqlite3
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.1", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.1.2", layout="centered")
 
 # --- 데이터베이스 및 기본 설정 ---
 def get_connection():
@@ -13,13 +13,10 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    # 실적 테이블 (5개 항목 고정 구조)
     c.execute('''CREATE TABLE IF NOT EXISTS salary
                  (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 일반필름 INTEGER, 
                   풀필름 INTEGER, 젤리 INTEGER, 케이블 INTEGER, 어댑터 INTEGER, 
                   합계 INTEGER, 비고 TEXT, PRIMARY KEY(직원명, 날짜))''')
-    
-    # 설정 테이블 (항목명 및 단가 관리)
     c.execute('''CREATE TABLE IF NOT EXISTS settings_v2
                  (id TEXT PRIMARY KEY, display_name TEXT, price INTEGER)''')
     
@@ -59,7 +56,7 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 사이드바: 항목 및 단가 관리 ---
+# --- 사이드바 ---
 with st.sidebar:
     st.header("⚙️ 항목 및 단가 관리")
     df_settings = load_settings()
@@ -82,28 +79,17 @@ settings = load_settings()
 item_names = settings['display_name'].tolist()
 item_prices = settings['price'].tolist()
 
-# --- CSS 설정 (v1.0 디자인 복구) ---
+# --- CSS 설정 ---
 st.markdown("""
     <style>
-    /* 가로 정렬 및 버튼 꽉 채우기 */
-    div[data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 5px !important;
-    }
-    div[data-testid="stHorizontalBlock"] > div {
-        flex: 1 1 0% !important;
-        min-width: 0 !important;
-    }
-    /* 버튼 높이 및 폰트 최적화 */
-    .stButton>button {
-        width: 100% !important;
-        height: 42px !important;
-        padding: 0px !important;
-    }
+    .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }
+    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; gap: 5px !important; }
+    div[data-testid="stHorizontalBlock"] > div { flex: 1 1 0% !important; min-width: 0 !important; }
+    .stButton>button { width: 100% !important; height: 42px !important; padding: 0px !important; }
     </style>
     """, unsafe_allow_html=True)
+
+st.markdown('<p class="version-text">v1.1.2-stable</p>', unsafe_allow_html=True)
 
 # 1. 상단 날짜 및 휴무
 st.write(f"### 💼 {user_name}님 실적")
@@ -151,7 +137,7 @@ if "current_incen_sum" not in st.session_state or st.session_state.get("last_dat
     st.session_state.last_date = str_date
 
 st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
-add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=1000, label_visibility="collapsed")
+add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
 btn_c1, btn_c2, btn_c3 = st.columns(3)
 if btn_c1.button("➕ 추가", use_container_width=True):
@@ -166,7 +152,7 @@ if btn_c3.button("🧹 리셋", use_container_width=True):
     st.session_state.incen_history = []
     st.rerun()
 
-# 4. 수량 입력 (설정창 이름 반영)
+# 4. 수량 입력
 f_c1, f_c2 = st.columns(2)
 v1 = f_c1.number_input(item_names[0], 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
 v2 = f_c2.number_input(item_names[1], 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -185,7 +171,7 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 리포트
+# 5. 정산 리포트 (날짜 표기 및 월 표시 수정)
 st.divider()
 st.subheader("📊 정산 및 제출 리포트")
 BASE_SALARY, INSURANCE = 3500000, 104760
@@ -201,18 +187,21 @@ if not period_df.empty:
     total_extra = period_df["합계"].sum()
     final_pay = int(BASE_SALARY + total_extra - INSURANCE)
     
+    # 몇 월 정산인지 상단에 크게 표시
+    report_month = end_dt.month 
+    st.info(f"📅 **{report_month}월 정산 내역** ({start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')})")
+    
     st.markdown(f"""
-        <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #ff4b4b; margin-bottom:15px;">
-            <p style="margin:0; font-size:12px; color:#666;">정산 기간: {start_dt} ~ {end_dt}</p>
+        <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #ff4b4b; margin-top:5px; margin-bottom:15px;">
             <p style="margin:5px 0; font-size:18px; font-weight:bold;">💰 총 수당(인센+판매): {total_extra:,}원</p>
             <p style="margin:0; font-size:22px; font-weight:bold; color:#ff4b4b;">🏦 실수령: {final_pay:,}원</p>
         </div>
     """, unsafe_allow_html=True)
     
-    # 제출용 표 (가변 헤더)
+    # 제출용 표
     html_code = f"""<table style="width:100%; border-collapse:collapse; table-layout:fixed; font-size:10px; text-align:center;">
         <tr style="background-color:#f8f9fa; border-bottom:2px solid #ddd;">
-            <th style="padding:4px; border:1px solid #eee; width:14%;">날짜</th>
+            <th style="padding:4px; border:1px solid #eee; width:12%;">날짜</th>
             <th style="padding:4px; border:1px solid #eee;">인센</th>
             <th style="padding:4px; border:1px solid #eee;">{item_names[0][:2]}</th>
             <th style="padding:4px; border:1px solid #eee;">{item_names[1][:2]}</th>
@@ -222,7 +211,11 @@ if not period_df.empty:
             <th style="padding:4px; border:1px solid #eee;">합계</th>
         </tr>"""
     for _, r in period_df.iterrows():
-        html_code += f"<tr><td style='border:1px solid #eee;'>{r['날짜'][5:]}</td>"
+        # 날짜를 '13일' 형식으로 단축
+        d_val = datetime.strptime(r['날짜'], "%Y-%m-%d")
+        short_date = f"{d_val.day}일"
+        
+        html_code += f"<tr><td style='border:1px solid #eee;'>{short_date}</td>"
         html_code += f"<td style='border:1px solid #eee;'>{r['인센티브']:,}</td>"
         html_code += f"<td style='border:1px solid #eee;'>{r['일반필름']}</td>"
         html_code += f"<td style='border:1px solid #eee;'>{r['풀필름']}</td>"
@@ -231,7 +224,6 @@ if not period_df.empty:
         html_code += f"<td style='border:1px solid #eee;'>{r['어댑터']}</td>"
         html_code += f"<td style='border:1px solid #eee; font-weight:bold;'>{r['합계']:,}</td></tr>"
     
-    # 합계 행
     html_code += f"<tr style='background-color:#fff3f3; font-weight:bold;'><td>합계</td>"
     html_code += f"<td>{period_df['인센티브'].sum():,}</td><td>{period_df['일반필름'].sum()}</td>"
     html_code += f"<td>{period_df['풀필름'].sum()}</td><td>{period_df['젤리'].sum()}</td>"
