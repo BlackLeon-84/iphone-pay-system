@@ -79,17 +79,33 @@ settings = load_settings()
 item_names = settings['display_name'].tolist()
 item_prices = settings['price'].tolist()
 
-# --- CSS 설정 (v1.1.3 초기 스타일) ---
+# --- CSS 설정 (버튼 꽉 차게 고정) ---
 st.markdown("""
     <style>
     .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }
-    .stButton>button { width: 100%; height: 40px; font-weight: bold; }
-    .report-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; }
-    .report-table th, .report-table td { border: 1px solid #eee; padding: 5px 2px; }
+    
+    /* [수정] 버튼 3개를 감싸는 투명 컨테이너 설정 */
+    div.stButtonGroup { width: 100% !important; text-align: center; }
+    div.stButtonGroup > div { width: 100% !important; display: flex !important; }
+    
+    /* 버튼 공백 제거 및 풀 사이즈 */
+    [data-testid="column"] { min-width: 0px !important; flex: 1 1 0% !important; padding: 0 2px !important; }
+    div[data-testid="stHorizontalBlock"] { gap: 0px !important; }
+
+    .stButton>button { 
+        width: 100% !important; 
+        height: 45px !important; 
+        padding: 0px !important; 
+        font-weight: bold;
+    }
+    
+    .report-table { width: 100%; border-collapse: collapse; font-size: 10px; text-align: center; }
+    .report-table th, .report-table td { border: 1px solid #eee; padding: 4px 1px !important; white-space: nowrap; }
+    .report-table th { background-color: #f8f9fa; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-st.markdown('<p class="version-text">v1.1.3-ver</p>', unsafe_allow_html=True)
+st.markdown('<p class="version-text">v1.1.3-stable</p>', unsafe_allow_html=True)
 
 # 1. 상단 날짜 및 휴무
 st.write(f"### 💼 {user_name}님 실적")
@@ -101,15 +117,16 @@ df_all = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(
 existing_row = df_all[df_all["날짜"] == str_date]
 is_edit = not existing_row.empty
 
-if top_c2.button("🌴 휴무"):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''', (user_name, str_date, "휴무"))
-    conn.commit()
-    conn.close()
-    st.rerun()
+with top_c2:
+    if st.button("🌴 휴무", use_container_width=True):
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''', (user_name, str_date, "휴무"))
+        conn.commit()
+        conn.close()
+        st.rerun()
 
-# 최근 기입 현황
+# 2. 최근 기입 현황
 st.write("**🗓️ 최근 기입 현황**")
 table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
 for i in range(7):
@@ -130,7 +147,7 @@ st.markdown(table_html, unsafe_allow_html=True)
 
 st.divider()
 
-# 2. 인센티브 입력
+# 3. 인센티브 입력
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
@@ -139,20 +156,25 @@ if "current_incen_sum" not in st.session_state or st.session_state.get("last_dat
 st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
 add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
+# [수정] 추가/취소/리셋 버튼을 강제로 꽉 차게 배치
 btn_c1, btn_c2, btn_c3 = st.columns(3)
-if btn_c1.button("➕ 추가"):
-    st.session_state.current_incen_sum += add_amount
-    st.session_state.incen_history.append(add_amount)
-    st.rerun()
-if btn_c2.button("↩️ 취소") and st.session_state.incen_history:
-    st.session_state.current_incen_sum -= st.session_state.incen_history.pop()
-    st.rerun()
-if btn_c3.button("🧹 리셋"):
-    st.session_state.current_incen_sum = 0
-    st.session_state.incen_history = []
-    st.rerun()
+with btn_c1:
+    if st.button("➕ 추가", key="add_btn"):
+        st.session_state.current_incen_sum += add_amount
+        st.session_state.incen_history.append(add_amount)
+        st.rerun()
+with btn_c2:
+    if st.button("↩️ 취소", key="undo_btn"):
+        if st.session_state.incen_history:
+            st.session_state.current_incen_sum -= st.session_state.incen_history.pop()
+            st.rerun()
+with btn_c3:
+    if st.button("🧹 리셋", key="reset_btn"):
+        st.session_state.current_incen_sum = 0
+        st.session_state.incen_history = []
+        st.rerun()
 
-# 3. 수량 입력
+# 4. 수량 입력
 f_c1, f_c2 = st.columns(2)
 v1 = f_c1.number_input(item_names[0], 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
 v2 = f_c2.number_input(item_names[1], 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -171,8 +193,30 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 4. 하단 표
+# 5. 정산 리포트
 st.divider()
-st.subheader("📊 정산 리포트")
-if not df_all.empty:
-    st.dataframe(df_all[["날짜", "인센티브", "합계", "비고"]].sort_values("날짜", ascending=False), use_container_width=True)
+st.subheader("📊 정산 및 제출 리포트")
+BASE_SALARY, INSURANCE = 3500000, 104760
+
+if selected_date.day >= 13:
+    start_dt, end_dt = date(selected_date.year, selected_date.month, 13), (selected_date.replace(day=28) + timedelta(days=20)).replace(day=12)
+else:
+    end_dt, start_dt = selected_date.replace(day=12), (selected_date.replace(day=1) - timedelta(days=10)).replace(day=13)
+
+period_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜", ascending=True)
+
+if not period_df.empty:
+    total_extra = period_df["합계"].sum()
+    final_pay = int(BASE_SALARY + total_extra - INSURANCE)
+    st.info(f"📅 **{end_dt.month}월 정산 내역**")
+    st.markdown(f"**💰 총 수당: {total_extra:,}원 | 🏦 실수령: {final_pay:,}원**")
+    
+    html_code = f"""<table class="report-table">
+        <tr>
+            <th style="width:35px;">날짜</th><th>인센</th><th>{item_names[0][:2]}</th><th>{item_names[1][:2]}</th><th>{item_names[2][:2]}</th><th>{item_names[3][:2]}</th><th>{item_names[4][:2]}</th><th>합계</th>
+        </tr>"""
+    for _, r in period_df.iterrows():
+        d_val = datetime.strptime(r['날짜'], "%Y-%m-%d")
+        html_code += f"<tr><td>{d_val.day}일</td><td>{r['인센티브']:,}</td><td>{r['일반필름']}</td><td>{r['풀필름']}</td><td>{r['젤리']}</td><td>{r['케이블']}</td><td>{r['어댑터']}</td><td style='font-weight:bold;'>{r['합계']:,}</td></tr>"
+    html_code += "</table>"
+    st.markdown(html_code, unsafe_allow_html=True)
