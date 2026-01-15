@@ -13,6 +13,8 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
+    # 인센티브 상세 내역(로그)을 저장하기 위해 TEXT 타입으로 컬럼을 관리하거나 
+    # 여기서는 화면 표시용으로 세션 기반 로그를 먼저 구현합니다.
     c.execute('''CREATE TABLE IF NOT EXISTS salary
                  (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 일반필름 INTEGER, 
                   풀필름 INTEGER, 젤리 INTEGER, 케이블 INTEGER, 어댑터 INTEGER, 
@@ -67,45 +69,51 @@ df = load_data(user_name)
 existing_row = df[df["날짜"] == str_date]
 is_edit = not existing_row.empty
 
-# --- 인센티브 합산 로직 (세션 상태 활용) ---
+# --- 인센티브 합산 및 로그 로직 ---
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
-    st.session_state.incen_history = [] # 취소 기능을 위한 기록
+    # 기존 데이터가 있다면 로그는 '기존 데이터'로 표시
+    st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
     st.session_state.last_date = str_date
 
 # 입력 폼
 with st.form("input_form"):
     st.subheader("📝 실적 입력")
     
-    # 1. 인센티브 직접 입력 및 합산
-    st.markdown(f"### 💵 현재 인센티브 총액: `{st.session_state.current_incen_sum:,}`원")
+    # 인센티브 총액 표시
+    st.markdown(f"### 💵 총 인센티브: `{st.session_state.current_incen_sum:,}`원")
     
-    # 건별 금액 입력란
-    add_amount = st.number_input("추가할 인센티브 금액 입력", min_value=0, step=1000, value=1000)
+    # 📜 인센티브 로그 표시
+    if st.session_state.incen_history:
+        log_text = " > ".join([f"{amt:,}원" for amt in st.session_state.incen_history])
+        st.caption(f"🕒 추가 내역: {log_text}")
+    else:
+        st.caption("🕒 추가된 내역이 없습니다.")
+
+    # 금액 입력란
+    add_amount = st.number_input("추가할 금액 입력", min_value=0, step=1000, value=1000)
     
     col_inc1, col_inc2, col_inc3 = st.columns([1, 1, 1])
     
     if col_inc1.form_submit_button("➕ 금액 추가"):
         st.session_state.current_incen_sum += add_amount
-        st.session_state.incen_history.append(add_amount) # 기록 저장
+        st.session_state.incen_history.append(add_amount)
         st.rerun()
         
-    if col_inc2.form_submit_button("↩️ 마지막 추가 취소"):
+    if col_inc2.form_submit_button("↩️ 마지막 취소"):
         if st.session_state.incen_history:
             last_added = st.session_state.incen_history.pop()
             st.session_state.current_incen_sum -= last_added
             st.rerun()
-        else:
-            st.warning("취소할 기록이 없습니다.")
             
-    if col_inc3.form_submit_button("🧹 전체 초기화"):
+    if col_inc3.form_submit_button("🧹 초기화"):
         st.session_state.current_incen_sum = 0
         st.session_state.incen_history = []
         st.rerun()
     
     st.divider()
     
-    # 2. 기타 항목 입력
+    # 기타 항목 입력
     c1, c2 = st.columns(2)
     v_nf = c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
     v_ff = c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -113,7 +121,7 @@ with st.form("input_form"):
     v_c = c2.number_input("케이블", 0, value=int(existing_row.iloc[0]["케이블"]) if is_edit else 0)
     v_a = st.number_input("어댑터", 0, value=int(existing_row.iloc[0]["어댑터"]) if is_edit else 0)
     
-    save_btn = st.form_submit_button("✅ 최종 저장하기 (하루치 제출)", use_container_width=True)
+    save_btn = st.form_submit_button("✅ 최종 저장하기", use_container_width=True)
 
 if save_btn:
     daily_sum = st.session_state.current_incen_sum + (v_nf*9000) + (v_ff*18000) + (v_j*9000) + (v_c*15000) + (v_a*23000)
@@ -123,10 +131,10 @@ if save_btn:
               (user_name, str_date, st.session_state.current_incen_sum, v_nf, v_ff, v_j, v_c, v_a, daily_sum))
     conn.commit()
     conn.close()
-    st.success(f"저장 완료! 총 {st.session_state.current_incen_sum:,}원이 반영되었습니다.")
+    st.success(f"저장 완료!")
     st.rerun()
 
-# --- 이하 정산 현황 로직 (동일) ---
+# --- 정산 현황 로직 ---
 if selected_date.day >= 13:
     start_dt = date(selected_date.year, selected_date.month, 13)
     next_month = selected_date.replace(day=28) + timedelta(days=20)
