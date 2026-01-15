@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 import sqlite3
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.1.8", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.1.9", layout="centered")
 
 # --- 데이터베이스 및 기본 설정 ---
 def get_connection():
@@ -55,41 +55,52 @@ if not st.session_state.logged_in:
     st.stop()
 
 user_name = st.session_state.user_name
-
-# --- 사이드바 ---
-with st.sidebar:
-    st.header("⚙️ 항목 및 단가 관리")
-    df_settings = load_settings()
-    new_data = []
-    with st.form("settings_form"):
-        for i, row in df_settings.iterrows():
-            st.markdown(f"**품목 {i+1}**")
-            n_name = st.text_input(f"이름", value=row['display_name'], key=f"nm_{row['id']}")
-            n_price = st.number_input(f"단가", value=int(row['price']), step=1000, key=f"pr_{row['id']}")
-            new_data.append((n_name, n_price, row['id']))
-        if st.form_submit_button("설정 저장"):
-            conn = get_connection()
-            c = conn.cursor()
-            c.executemany("UPDATE settings_v2 SET display_name=?, price=? WHERE id=?", new_data)
-            conn.commit()
-            conn.close()
-            st.rerun()
-
 settings = load_settings()
 item_names = settings['display_name'].tolist()
 item_prices = settings['price'].tolist()
 
-# --- CSS 설정 (검증된 초기 레이아웃 스타일) ---
+# --- CSS 설정 (태완님이 만족하셨던 초기 정렬 방식 복구) ---
 st.markdown("""
     <style>
     .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }
-    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; gap: 5px !important; }
-    div[data-testid="stHorizontalBlock"] > div { flex: 1 1 0% !important; min-width: 0 !important; }
-    .stButton>button { width: 100% !important; height: 42px !important; padding: 0px !important; font-weight: bold; }
+    
+    /* 입력창 상단 컬럼 가로 정렬 복구 */
+    div[data-testid="stHorizontalBlock"] { 
+        display: flex !important; 
+        flex-direction: row !important; 
+        gap: 5px !important; 
+    }
+    div[data-testid="stHorizontalBlock"] > div { 
+        flex: 1 1 0% !important; 
+        min-width: 0 !important; 
+    }
+    
+    /* 버튼 스타일 */
+    .stButton>button { 
+        width: 100% !important; 
+        height: 42px !important; 
+        padding: 0px !important; 
+        font-weight: bold; 
+    }
+    
+    /* 리포트 표 전용 (안 깨지는 10px 버전) */
+    .report-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10px;
+        text-align: center;
+        table-layout: auto;
+    }
+    .report-table th, .report-table td {
+        border: 1px solid #eee;
+        padding: 4px 1px;
+        white-space: nowrap;
+    }
+    .report-table th { background-color: #f8f9fa; }
     </style>
     """, unsafe_allow_html=True)
 
-st.markdown('<p class="version-text">v1.1.8-ver</p>', unsafe_allow_html=True)
+st.markdown('<p class="version-text">v1.1.9-ver</p>', unsafe_allow_html=True)
 
 # 1. 상단 날짜 및 휴무
 st.write(f"### 💼 {user_name}님 실적")
@@ -152,8 +163,38 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 4. 하단 표 (가장 안전한 기본형 리포트)
+# 4. 하단 정산 리포트 (태완님이 원하셨던 2글자 표 복구)
 st.divider()
-st.subheader("📊 정산 리포트")
-if not df_all.empty:
-    st.dataframe(df_all[["날짜", "인센티브", "합계", "비고"]].sort_values("날짜", ascending=False), use_container_width=True)
+st.subheader("📊 정산 및 제출 리포트")
+BASE_SALARY, INSURANCE = 3500000, 104760
+
+if selected_date.day >= 13:
+    start_dt, end_dt = date(selected_date.year, selected_date.month, 13), (selected_date.replace(day=28) + timedelta(days=20)).replace(day=12)
+else:
+    end_dt, start_dt = selected_date.replace(day=12), (selected_date.replace(day=1) - timedelta(days=10)).replace(day=13)
+
+period_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜", ascending=True)
+
+if not period_df.empty:
+    total_extra = period_df["합계"].sum()
+    final_pay = int(BASE_SALARY + total_extra - INSURANCE)
+    st.info(f"📅 **{end_dt.month}월 정산 내역**")
+    
+    # 실수령액 강조 박스
+    st.markdown(f"""
+        <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #ff4b4b; margin-top:5px; margin-bottom:15px;">
+            <p style="margin:5px 0; font-size:16px; font-weight:bold;">💰 총 수당: {total_extra:,}원</p>
+            <p style="margin:0; font-size:18px; font-weight:bold; color:#ff4b4b;">🏦 실수령: {final_pay:,}원</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # 태완님이 원하셨던 2글자 요약 표
+    html_code = f"""<table class="report-table">
+        <tr>
+            <th style="width:35px;">날짜</th><th>인센</th><th>{item_names[0][:2]}</th><th>{item_names[1][:2]}</th><th>{item_names[2][:2]}</th><th>{item_names[3][:2]}</th><th>{item_names[4][:2]}</th><th>합계</th>
+        </tr>"""
+    for _, r in period_df.iterrows():
+        d_val = datetime.strptime(r['날짜'], "%Y-%m-%d")
+        html_code += f"<tr><td>{d_val.day}일</td><td>{r['인센티브']:,}</td><td>{r['일반필름']}</td><td>{r['풀필름']}</td><td>{r['젤리']}</td><td>{r['케이블']}</td><td>{r['어댑터']}</td><td style='font-weight:bold;'>{r['합계']:,}</td></tr>"
+    html_code += f"<tr style='background-color:#fff3f3; font-weight:bold;'><td>합계</td><td>{period_df['인센티브'].sum():,}</td><td>{period_df['일반필름'].sum()}</td><td>{period_df['풀필름'].sum()}</td><td>{period_df['젤리'].sum()}</td><td>{period_df['케이블'].sum()}</td><td>{period_df['어댑터'].sum()}</td><td style='color:#ff4b4b;'>{total_extra:,}</td></tr></table>"
+    st.markdown(html_code, unsafe_allow_html=True)
