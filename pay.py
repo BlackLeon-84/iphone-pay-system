@@ -44,11 +44,11 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# 가로 버튼 고정용 CSS
+# --- 가로 정렬 강제 CSS (심플 버전) ---
 st.markdown("<style>div[data-testid='stHorizontalBlock']{display:flex!important;flex-direction:row!important;gap:5px!important;}</style>", unsafe_allow_html=True)
 
-# 1. 상단 입력부
-st.write(f"### 💼 {user_name}님 실적 기입")
+# 1. 최상단: 날짜 및 휴무
+st.write(f"### 💼 {user_name}님 실적")
 top_c1, top_c2 = st.columns([2, 1])
 selected_date = top_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = selected_date.strftime("%Y-%m-%d")
@@ -65,14 +65,17 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 인센티브 계산부 (기존 유지)
+st.divider()
+
+# 2. 인센티브 입력 및 가로 버튼
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
     st.session_state.last_date = str_date
 
-st.write(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
+st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
 add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=1000, label_visibility="collapsed")
+
 btn_c1, btn_c2, btn_c3 = st.columns(3)
 if btn_c1.button("➕ 추가", use_container_width=True):
     st.session_state.current_incen_sum += add_amount
@@ -86,7 +89,7 @@ if btn_c3.button("🧹 리셋", use_container_width=True):
     st.session_state.incen_history = []
     st.rerun()
 
-# 판매 수량 입력부
+# 3. 필름 및 기타 항목 (2열)
 f_c1, f_c2 = st.columns(2)
 v_nf = f_c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
 v_ff = f_c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -104,12 +107,11 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 2. [변경] 정산 및 제출용 영수증 리스트
+# 4. 정산 현황 및 제출용 표
 st.divider()
-st.subheader("📑 정산 상세 리스트")
+st.subheader("📊 정산 및 제출용")
 BASE_SALARY, INSURANCE = 3500000, 104760
 
-# 정산 기간 설정
 if selected_date.day >= 13:
     start_dt = date(selected_date.year, selected_date.month, 13)
     next_month = selected_date.replace(day=28) + timedelta(days=20)
@@ -128,41 +130,41 @@ if not df_now.empty:
         total_extra = period_df["합계"].sum()
         final_pay = int(BASE_SALARY + total_extra - INSURANCE)
         
-        # 최상단 합계 강조
-        st.markdown(f"""
-            <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #ff4b4b; margin-bottom:20px;">
-                <p style="margin:0; font-size:14px; color:#555;">정산 기간: {start_dt} ~ {end_dt}</p>
-                <p style="margin:5px 0; font-size:18px; font-weight:bold;">💰 총 수당: {total_extra:,}원</p>
-                <p style="margin:0; font-size:22px; font-weight:bold; color:#ff4b4b;">🏦 실수령액: {final_pay:,}원</p>
-            </div>
-        """, unsafe_allow_html=True)
-
-        st.write("**📄 일별 상세 내역 (스샷 제출용)**")
+        # --- [수정] 실수령액 글자 크게 표시 ---
+        st.write(f"**💰 이번 달 수당 합계: {total_extra:,}원**")
+        st.metric(label="🏦 예상 실수령액 (기본급 포함)", value=f"{final_pay:,}원")
         
-        # 표 대신 영수증 카드 형태
-        for _, row in period_df.iterrows():
-            is_off = row['비고'] == "휴무"
-            m_d = row['날짜'][5:]
-            
-            if is_off:
-                st.markdown(f"""
-                    <div style="border:1px solid #ddd; padding:10px; border-radius:5px; margin-bottom:10px; background-color:#f8f9fa;">
-                        <span style="font-weight:bold;">📅 {m_d}</span> | <span style="color:#888;">🌴 휴무</span>
-                    </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                    <div style="border:1px solid #ddd; padding:10px; border-radius:5px; margin-bottom:10px;">
-                        <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #eee; padding-bottom:5px; margin-bottom:5px;">
-                            <span style="font-weight:bold; font-size:16px;">📅 {m_d} 실적</span>
-                            <span style="font-weight:bold; color:#ff4b4b; font-size:16px;">{row['합계']:,}원</span>
-                        </div>
-                        <div style="font-size:13px; line-height:1.6;">
-                            <b>인센티브:</b> {row['인센티브']:,}원<br>
-                            <b>필름:</b> 일반 {row['일반필름']} / 풀 {row['풀필름']}<br>
-                            <b>기타:</b> 젤리 {row['젤리']} / 케이블 {row['케이블']} / 어댑터 {row['어댑터']}
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
+        st.write("**📄 제출용 상세 (스샷용)**")
+        
+        # 데이터 가공
+        rep_df = period_df.copy()
+        rep_df['날짜'] = rep_df['날짜'].apply(lambda x: x[5:])
+        rep_df = rep_df[['날짜', '인센티브', '일반필름', '풀필름', '젤리', '케이블', '어댑터', '합계']]
+        rep_df.columns = ['날짜', '인센', '일', '풀', '젤', '케', '어', '합계']
+        
+        # --- [수정] 콤마 자동 적용 및 열 너비 초소형화 ---
+        st.dataframe(
+            rep_df,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "날짜": st.column_config.TextColumn("날짜", width="small"),
+                "인센": st.column_config.NumberColumn("인센", format="%d", width="small"),
+                "일": st.column_config.NumberColumn("일", width="small"),
+                "풀": st.column_config.NumberColumn("풀", width="small"),
+                "젤": st.column_config.NumberColumn("젤", width="small"),
+                "케": st.column_config.NumberColumn("케", width="small"),
+                "어": st.column_config.NumberColumn("어", width="small"),
+                "합계": st.column_config.NumberColumn("합계", format="%d", width="medium"),
+            }
+        )
 
-st.caption("위 내역을 위아래로 캡처해서 사장님께 보내시면 됩니다.")
+        st.divider()
+        for _, row in period_df.sort_values("날짜", ascending=False).iterrows():
+            is_off = row['비고'] == "휴무"
+            title = f"📅 {row['날짜']} ({row['합계']:,}원)" if not is_off else f"📅 {row['날짜']} (🌴 휴무)"
+            with st.expander(title):
+                if is_off: st.write("휴무")
+                else:
+                    st.write(f"🔹 인센: {row['인센티브']:,}원 | 필름: {row['일반필름']}/{row['풀필름']}")
+                    st.write(f"🔹 젤리: {row['젤리']} / 케이블: {row['케이블']} / 어댑터: {row['어댑터']}")
