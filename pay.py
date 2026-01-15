@@ -57,6 +57,18 @@ st.markdown("""
         flex: 1 1 0% !important;
         min-width: 0 !important;
     }
+    /* 스샷용 표 폰트 조절 */
+    .report-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+        table-layout: fixed;
+    }
+    .report-table th, .report-table td {
+        border: 1px solid #ddd;
+        padding: 4px 2px !important;
+        text-align: center;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -141,7 +153,7 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 및 제출용 표
+# 5. 정산 현황 및 초슬림 제출용 표
 st.divider()
 st.subheader("📊 정산 및 제출용")
 BASE_SALARY, INSURANCE = 3500000, 104760
@@ -162,32 +174,47 @@ if not df_now.empty:
     
     if not period_df.empty:
         total_extra = period_df["합계"].sum()
-        # [수정] 실수령액과 수당 합계를 같이 표시
         st.write(f"**💰 누적 수당 합계: {total_extra:,}원**")
-        st.info(f"🏦 **예상 실수령액: {int(BASE_SALARY + total_extra - INSURANCE):,}원** (기본급 포함)")
+        st.info(f"🏦 **예상 실수령액: {int(BASE_SALARY + total_extra - INSURANCE):,}원**")
         
         st.write("**📄 제출용 상세 (스샷용)**")
-        # 데이터 가공: 제목을 한 글자로 축소하여 가로 폭 확보
-        rep_df = period_df.copy()
-        rep_df['날짜'] = rep_df['날짜'].apply(lambda x: x[5:]) # 년도 제거
-        rep_df = rep_df[['날짜', '인센티브', '일반필름', '풀필름', '젤리', '케이블', '어댑터', '합계']]
         
-        # [수정] 제목 한 글자로 변경하여 짤림 방지
-        rep_df.columns = ['날짜', '인센', '일', '풀', '젤', '케', '어', '합계']
-        
-        # 금액 컬럼에 콤마 추가 (문자열로 변환됨)
-        for col in ['인센', '합계']:
-            rep_df[col] = rep_df[col].apply(lambda x: f"{x:,}")
-
-        st.dataframe(rep_df, hide_index=True, use_container_width=True)
+        # --- [핵심] 여백을 최소화한 HTML 커스텀 테이블 ---
+        custom_table = f"""
+        <div style="overflow-x: auto;">
+            <table class="report-table">
+                <tr style="background-color: #f1f3f5;">
+                    <th style="width:14%">날짜</th><th style="width:16%">인센</th>
+                    <th>일</th><th>풀</th><th>젤</th><th>케</th><th>어</th>
+                    <th style="width:18%">합계</th>
+                </tr>
+        """
+        for _, row in period_df.iterrows():
+            is_off = row['비고'] == "휴무"
+            m_d = row['날짜'][5:]
+            bg = "#ffffff" if not is_off else "#f9f9f9"
+            
+            custom_table += f"""
+                <tr style="background-color: {bg};">
+                    <td>{m_d}</td>
+                    <td>{f"{row['인센티브']:,}" if not is_off else "-"}</td>
+                    <td>{row['일반필름'] if not is_off else ""}</td>
+                    <td>{row['풀필름'] if not is_off else ""}</td>
+                    <td>{row['젤리'] if not is_off else ""}</td>
+                    <td>{row['케이블'] if not is_off else ""}</td>
+                    <td>{row['어댑터'] if not is_off else ""}</td>
+                    <td style="font-weight:bold;">{f"{row['합계']:,}" if not is_off else "휴무"}</td>
+                </tr>
+            """
+        custom_table += "</table></div>"
+        st.markdown(custom_table, unsafe_allow_html=True)
 
         st.divider()
-        # 하단 상세 내역에도 콤마 적용
         for _, row in period_df.sort_values("날짜", ascending=False).iterrows():
             is_off = row['비고'] == "휴무"
             title = f"📅 {row['날짜']} ({row['합계']:,}원)" if not is_off else f"📅 {row['날짜']} (🌴 휴무)"
             with st.expander(title):
                 if is_off: st.write("휴무")
                 else:
-                    st.write(f"🔹 인센: {row['인센티브']:,}원 | 필름: {row['일반필름']}/{row['풀필름']}")
+                    st.write(f"🔹 인센: {row['인센티브']:,} | 필름: {row['일반필름']}/{row['풀필름']}")
                     st.write(f"🔹 젤리: {row['젤리']} / 케이블: {row['케이블']} / 어댑터: {row['어댑터']}")
