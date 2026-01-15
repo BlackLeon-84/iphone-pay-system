@@ -79,39 +79,15 @@ settings = load_settings()
 item_names = settings['display_name'].tolist()
 item_prices = settings['price'].tolist()
 
-# --- CSS 설정 (버튼 정렬을 위한 최소한의 코드) ---
+# --- CSS 설정 (버튼 정렬 고정) ---
 st.markdown("""
     <style>
     .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }
-    
-    /* 가로 정렬 고정 */
-    div[data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-    }
-    div[data-testid="stHorizontalBlock"] > div {
-        flex: 1 1 0% !important;
-        min-width: 0 !important;
-    }
-    .stButton>button {
-        width: 100% !important;
-        height: 42px !important;
-        padding: 0px !important;
-        font-weight: bold;
-    }
-    
-    /* 리포트 표 스타일 */
-    .report-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 10px;
-        text-align: center;
-    }
-    .report-table th, .report-table td {
-        border: 1px solid #eee;
-        padding: 4px 1px;
-    }
+    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; gap: 5px !important; }
+    div[data-testid="stHorizontalBlock"] > div { flex: 1 1 0% !important; min-width: 0 !important; }
+    .stButton>button { width: 100% !important; height: 42px !important; padding: 0px !important; font-weight: bold; }
+    .report-table { width: 100%; border-collapse: collapse; font-size: 10px; text-align: center; }
+    .report-table th, .report-table td { border: 1px solid #eee; padding: 4px 1px; }
     .report-table th { background-color: #f8f9fa; }
     </style>
     """, unsafe_allow_html=True)
@@ -135,6 +111,25 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.commit()
     conn.close()
     st.rerun()
+
+# --- [복구됨] 최근 기입 현황 메뉴 ---
+st.write("**🗓️ 최근 기입 현황**")
+table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
+for i in range(7):
+    d = date.today() - timedelta(days=6-i)
+    table_html += f"<th style='border:1px solid #ddd; padding:5px; font-size:10px; text-align:center;'>{d.day}일</th>"
+table_html += "</tr><tr>"
+for i in range(7):
+    d = date.today() - timedelta(days=6-i)
+    str_check = d.strftime("%Y-%m-%d")
+    target_row = df_all[df_all["날짜"] == str_check]
+    icon, bg = "⚪", "#ffffff"
+    if not target_row.empty:
+        if target_row.iloc[0]["비고"] == "휴무": icon, bg = "💤", "#e1f5fe"
+        else: icon, bg = "✅", "#e8f5e9"
+    table_html += f"<td style='border:1px solid #ddd; padding:8px; text-align:center; background-color:{bg}; font-size:16px;'>{icon}</td>"
+table_html += "</tr></table>"
+st.markdown(table_html, unsafe_allow_html=True)
 
 st.divider()
 
