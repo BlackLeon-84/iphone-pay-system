@@ -4,41 +4,80 @@ from datetime import datetime, date, timedelta
 import sqlite3
 
 # 페이지 설정
-st.set_page_config(page_title="급여 정산 시스템", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템", layout="centered")
 
-# --- 로컬 데이터베이스 연결 (영구 저장용) ---
+# --- 데이터베이스 설정 ---
 def get_connection():
     return sqlite3.connect("data.db", check_same_thread=False)
 
 def init_db():
     conn = get_connection()
     c = conn.cursor()
+    # '직원명' 컬럼을 추가하여 본인 데이터만 필터링하도록 설정
     c.execute('''CREATE TABLE IF NOT EXISTS salary
-                 (날짜 TEXT PRIMARY KEY, 인센티브 INTEGER, 일반필름 INTEGER, 
-                  풀필름 INTEGER, 젤리 INTEGER, 케이블 INTEGER, 어댑터 INTEGER, 합계 INTEGER)''')
+                 (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 일반필름 INTEGER, 
+                  풀필름 INTEGER, 젤리 INTEGER, 케이블 INTEGER, 어댑터 INTEGER, 
+                  합계 INTEGER, PRIMARY KEY(직원명, 날짜))''')
     conn.commit()
     conn.close()
 
 init_db()
 
+# --- 로그인 정보 (아이디: 비밀번호) ---
+# 여기서 직원별 아이디와 비밀번호를 관리하세요.
+USER_CREDENTIALS = {
+    "성훈": "1234",
+    "철수": "5678",
+    "영희": "0000"
+}
+
+# --- 로그인 상태 확인 ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.user_name = ""
+
+if not st.session_state.logged_in:
+    st.title("🔐 직원 전용 로그인")
+    with st.form("login_form"):
+        user_id = st.text_input("이름 (ID)", placeholder="이름을 입력하세요")
+        password = st.text_input("비밀번호", type="password")
+        login_btn = st.form_submit_button("로그인")
+        
+        if login_btn:
+            if user_id in USER_CREDENTIALS and USER_CREDENTIALS[user_id] == password:
+                st.session_state.logged_in = True
+                st.session_state.user_name = user_id
+                st.rerun()
+            else:
+                st.error("이름 또는 비밀번호가 틀렸습니다.")
+    st.stop()  # 로그인 안 되면 여기서 멈춤
+
+# --- 로그인 성공 후 메인 화면 ---
+user_name = st.session_state.user_name
+st.sidebar.title(f"👋 {user_name}님")
+if st.sidebar.button("로그아웃"):
+    st.session_state.logged_in = False
+    st.rerun()
+
 # 고정 수치
 BASE_SALARY = 3500000
 INSURANCE = 104760
 
-st.title("💼 월급 정산 시스템 (영구 저장형)")
+st.title(f"💼 {user_name}님 정산 시스템")
 
 # 1. 날짜 선택
 selected_date = st.date_input("근무 날짜", value=date.today())
 str_date = selected_date.strftime("%Y-%m-%d")
 
-# 2. 데이터 불러오기 함수
-def load_data():
+# 2. 데이터 불러오기 (본인 것만)
+def load_data(name):
     conn = get_connection()
-    df = pd.read_sql("SELECT * FROM salary", conn)
+    # SQL 쿼리로 본인 이름인 데이터만 가져옴
+    df = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", conn, params=(name,))
     conn.close()
     return df
 
-df = load_data()
+df = load_data(user_name)
 existing_row = df[df["날짜"] == str_date]
 is_edit = not existing_row.empty
 
@@ -56,19 +95,19 @@ with st.form("input_form"):
         v_c = st.number_input("케이블", 0, value=int(existing_row.iloc[0]["케이블"]) if is_edit else 0)
         v_a = st.number_input("어댑터", 0, value=int(existing_row.iloc[0]["어댑터"]) if is_edit else 0)
     
-    save_btn = st.form_submit_button("✅ 이 날짜 데이터 저장하기")
+    save_btn = st.form_submit_button("✅ 데이터 저장하기")
 
-# 4. 저장 로직 (SQLite 사용)
+# 4. 저장 로직 (직원명 포함)
 if save_btn:
     daily_sum = v_incen + (v_nf*9000) + (v_ff*18000) + (v_j*9000) + (v_c*15000) + (v_a*23000)
     conn = get_connection()
     c = conn.cursor()
-    # 이미 있으면 덮어쓰기(REPLACE)
-    c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-              (str_date, v_incen, v_nf, v_ff, v_j, v_c, v_a, daily_sum))
+    # 직원명과 날짜를 기준으로 저장/수정
+    c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+              (user_name, str_date, v_incen, v_nf, v_ff, v_j, v_c, v_a, daily_sum))
     conn.commit()
     conn.close()
-    st.success(f"✅ {str_date} 데이터가 안전하게 저장되었습니다!")
+    st.success(f"✅ 저장 완료!")
     st.rerun()
 
 # 5. 정산 주기 계산
@@ -80,23 +119,19 @@ else:
     start_dt = (selected_date.replace(day=1) - timedelta(days=1)).replace(day=13)
 
 st.divider()
-st.subheader(f"📊 정산 현황 ({start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')})")
+st.subheader(f"📊 {user_name}님 정산 현황")
 
-# 6. 필터링 및 출력
-df = load_data()
+# 6. 본인 데이터만 출력
+df = load_data(user_name)
 if not df.empty:
     df['날짜_dt'] = pd.to_datetime(df['날짜']).dt.date
     period_df = df[(df['날짜_dt'] >= start_dt) & (df['날짜_dt'] <= end_dt)]
     
     if not period_df.empty:
-        st.dataframe(period_df.drop(columns=['날짜_dt']).sort_values("날짜", ascending=False), use_container_width=True)
+        st.dataframe(period_df.drop(columns=['날짜_dt', '직원명']).sort_values("날짜", ascending=False), use_container_width=True)
         total_extra = period_df["합계"].sum()
         c1, c2 = st.columns(2)
         c1.metric("누적 수당", f"{total_extra:,}원")
         c2.metric("예상 실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
     else:
-        st.info("기록된 데이터가 없습니다.")
-
-    st.divider()
-    csv = df.to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 백업용 전체 데이터 다운로드", csv, "salary_backup.csv", "text/csv")
+        st.info("이 기간의 데이터가 없습니다.")
