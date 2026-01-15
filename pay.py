@@ -66,33 +66,40 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 2. [수정] 1주일 현황 - 달력 그리드 형태 (4개씩 2줄)
-st.write("**🗓️ 최근 기입 현황**") 
-# 오늘 포함 최근 8일치를 보여주어 4x2 그리드 완성
-grid_rows = [st.columns(4), st.columns(4)]
-for i in range(8):
-    check_date = date.today() - timedelta(days=7-i)
-    str_check = check_date.strftime("%Y-%m-%d")
+# 2. [수정 핵심] 모바일 가로 고정 표(Table) 현황판
+st.write("**🗓️ 최근 기입 현황**")
+
+# 표 헤더 및 내용 생성 (최근 7일)
+table_html = """
+<table style="width:100%; border-collapse: collapse; table-layout: fixed;">
+    <tr style="background-color: #f8f9fa;">
+"""
+# 날짜 헤더 (윗줄)
+for i in range(7):
+    d = date.today() - timedelta(days=6-i)
+    table_html += f"<th style='border:1px solid #ddd; padding:5px; font-size:10px; text-align:center;'>{d.day}일</th>"
+table_html += "</tr><tr>"
+
+# 상태 아이콘 (아랫줄)
+for i in range(7):
+    d = date.today() - timedelta(days=6-i)
+    str_check = d.strftime("%Y-%m-%d")
     target_row = df_all[df_all["날짜"] == str_check]
     
-    icon, color, bg = "⚪", "#999999", "#f8f9fa"
+    icon, bg = "⚪", "#ffffff"
     if not target_row.empty:
         if target_row.iloc[0]["비고"] == "휴무":
-            icon, color, bg = "💤", "#007bff", "#e1f5fe"
+            icon, bg = "💤", "#e1f5fe"
         else:
-            icon, color, bg = "✅", "#28a745", "#e8f5e9"
+            icon, bg = "✅", "#e8f5e9"
     
-    # 그리드 배치 계산
-    row_idx = 0 if i < 4 else 1
-    col_idx = i % 4
-    
-    with grid_rows[row_idx][col_idx]:
-        st.markdown(f"""
-            <div style="text-align:center; padding:8px 0; background:{bg}; border-radius:10px; border:1px solid {color}44; margin-bottom:5px;">
-                <div style="font-size:11px; font-weight:bold; color:{color};">{check_date.day}일</div>
-                <div style="font-size:18px; margin-top:2px;">{icon}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    table_html += f"<td style='border:1px solid #ddd; padding:8px; text-align:center; background-color:{bg}; font-size:16px;'>{icon}</td>"
+
+table_html += "</tr></table>"
+
+# HTML 출력
+st.markdown(table_html, unsafe_allow_html=True)
+st.write("")
 
 st.divider()
 
@@ -141,7 +148,7 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 (기존 스타일)
+# 5. 정산 현황 (기존 스타일 유지)
 st.divider()
 st.subheader("📊 정산 현황")
 
