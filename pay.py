@@ -54,7 +54,6 @@ str_date = selected_date.strftime("%Y-%m-%d")
 df_all = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(), params=(user_name,))
 existing_row = df_all[df_all["날짜"] == str_date]
 is_edit = not existing_row.empty
-is_off = is_edit and existing_row.iloc[0]["비고"] == "휴무"
 
 if top_c2.button("🌴 휴무", use_container_width=True):
     conn = get_connection()
@@ -140,7 +139,7 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
 
 # 5. 정산 현황 및 상세 보고서
 st.divider()
-st.subheader("📊 정산 및 상세 보고")
+st.subheader("📊 정산 현황")
 BASE_SALARY, INSURANCE = 3500000, 104760
 
 if selected_date.day >= 13:
@@ -155,7 +154,7 @@ else:
 df_now = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(), params=(user_name,))
 if not df_now.empty:
     df_now['날짜_dt'] = pd.to_datetime(df_now['날짜']).dt.date
-    period_df = df_now[(df_now['날짜_dt'] >= start_dt) & (df_now['날짜_dt'] <= end_dt)].sort_values("날짜", ascending=False)
+    period_df = df_now[(df_now['날짜_dt'] >= start_dt) & (df_now['날짜_dt'] <= end_dt)].sort_values("날짜", ascending=True)
     
     if not period_df.empty:
         total_extra = period_df["합계"].sum()
@@ -163,17 +162,41 @@ if not df_now.empty:
         c_res1.metric("누적 수당", f"{total_extra:,}원")
         c_res2.metric("실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
         
-        # --- [새 기능] 제출용 상세 보고서 표 ---
-        with st.expander("📋 한눈에 보는 상세 보고서 (제출용)", expanded=False):
-            # 필요한 컬럼만 추출하여 이름 변경
-            report_df = period_df[['날짜', '인센티브', '일반필름', '풀필름', '젤리', '케이블', '어댑터', '합계']].copy()
-            report_df.columns = ['날짜', '인센', '일반', '풀', '젤리', '케이블', '어댑터', '소계']
-            st.dataframe(report_df, use_container_width=True, hide_index=True)
-            st.caption("※ 위 표를 캡처하여 보고용으로 사용하세요.")
+        # --- [수정] 스크린샷 전용 초슬림 제출용 표 ---
+        st.write("**📄 제출용 요약 (스샷용)**")
+        
+        # 년도 제외 및 컬럼 축소
+        report_html = """
+        <div style="overflow-x: auto;">
+        <table style="width:100%; border-collapse: collapse; font-size: 11px; text-align: center;">
+            <tr style="background-color: #f1f3f5; font-weight: bold;">
+                <th style="border: 1px solid #dee2e6; padding: 4px;">날짜</th>
+                <th style="border: 1px solid #dee2e6; padding: 4px;">인센</th>
+                <th style="border: 1px solid #dee2e6; padding: 4px;">일/풀</th>
+                <th style="border: 1px solid #dee2e6; padding: 4px;">소계</th>
+            </tr>
+        """
+        for _, row in period_df.iterrows():
+            m_d = datetime.strptime(row['날짜'], "%Y-%m-%d").strftime("%m-%d") # 년도 제거 (01-15 형태)
+            bg = "#ffffff" if row['비고'] != "휴무" else "#f8f9fa"
+            content = f"{row['인센티브']:,}" if row['비고'] != "휴무" else "휴무"
+            film = f"{row['일반필름']}/{row['풀필름']}" if row['비고'] != "휴무" else "-"
+            total = f"{row['합계']:,}" if row['비고'] != "휴무" else "0"
+            
+            report_html += f"""
+            <tr style="background-color: {bg};">
+                <td style="border: 1px solid #dee2e6; padding: 4px;">{m_d}</td>
+                <td style="border: 1px solid #dee2e6; padding: 4px;">{content}</td>
+                <td style="border: 1px solid #dee2e6; padding: 4px;">{film}</td>
+                <td style="border: 1px solid #dee2e6; padding: 4px; font-weight:bold;">{total}</td>
+            </tr>
+            """
+        report_html += "</table></div>"
+        st.markdown(report_html, unsafe_allow_html=True)
 
         st.write("---")
-        # 기존 일별 상세 내역 (디자인 유지)
-        for index, row in period_df.iterrows():
+        # [기존 유지] 일별 상세 내역 (날짜순 정렬 보정)
+        for index, row in period_df.sort_values("날짜", ascending=False).iterrows():
             is_off_row = row['비고'] == "휴무"
             title = f"📅 {row['날짜']} " + ("(🌴 휴무)" if is_off_row else f"({row['합계']:,}원)")
             with st.expander(title):
