@@ -44,7 +44,7 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 가로 정렬 강제 CSS ---
+# --- [디자인 핵심] 가로 정렬 CSS (태완님 기존 틀 유지) ---
 st.markdown("""
     <style>
     div[data-testid="stHorizontalBlock"] {
@@ -56,6 +56,10 @@ st.markdown("""
     div[data-testid="stHorizontalBlock"] > div {
         flex: 1 1 0% !important;
         min-width: 0 !important;
+    }
+    /* 스샷용 표 폰트 크기만 살짝 조절 */
+    .small-font {
+        font-size:12px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -78,7 +82,7 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 2. 최근 기입 현황
+# 2. 최근 기입 현황 (동그라미 디자인 100% 복구)
 st.write("**🗓️ 최근 기입 현황**")
 table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
 for i in range(7):
@@ -99,7 +103,7 @@ st.markdown(table_html, unsafe_allow_html=True)
 
 st.divider()
 
-# 3. 인센티브 입력 및 가로 버튼
+# 3. 인센티브 입력 및 가로 버튼 (디자인 유지)
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
@@ -123,7 +127,7 @@ if btn_c3.button("🧹 리셋", use_container_width=True):
 
 st.write("")
 
-# 4. 필름 및 기타 항목 (2열)
+# 4. 필름 및 기타 항목 (기존 2열 유지)
 f_c1, f_c2 = st.columns(2)
 v_nf = f_c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
 v_ff = f_c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -141,53 +145,44 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 및 제출용 표
+# 5. [핵심] 제출용 상세 보기 제어
 st.divider()
-st.subheader("📊 정산 및 제출용")
-BASE_SALARY, INSURANCE = 3500000, 104760
+show_report = st.checkbox("📸 사장님 보고용 스샷 모드 켜기")
 
-if selected_date.day >= 13:
-    start_dt = date(selected_date.year, selected_date.month, 13)
-    next_month = selected_date.replace(day=28) + timedelta(days=20)
-    end_dt = next_month.replace(day=12)
-else:
-    end_dt = selected_date.replace(day=12)
-    last_month = selected_date.replace(day=1) - timedelta(days=10)
-    start_dt = last_month.replace(day=13)
+if show_report:
+    st.subheader("📊 제출용 정산 상세")
+    BASE_SALARY, INSURANCE = 3500000, 104760
 
-df_now = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(), params=(user_name,))
-if not df_now.empty:
-    df_now['날짜_dt'] = pd.to_datetime(df_now['날짜']).dt.date
-    period_df = df_now[(df_now['날짜_dt'] >= start_dt) & (df_now['날짜_dt'] <= end_dt)].sort_values("날짜", ascending=True)
+    if selected_date.day >= 13:
+        start_dt, end_dt = date(selected_date.year, selected_date.month, 13), (selected_date.replace(day=28) + timedelta(days=20)).replace(day=12)
+    else:
+        end_dt, start_dt = selected_date.replace(day=12), (selected_date.replace(day=1) - timedelta(days=10)).replace(day=13)
+
+    period_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
     
     if not period_df.empty:
         total_extra = period_df["합계"].sum()
-        # [수정] 실수령액과 수당 합계를 같이 표시
-        st.write(f"**💰 누적 수당 합계: {total_extra:,}원**")
-        st.info(f"🏦 **예상 실수령액: {int(BASE_SALARY + total_extra - INSURANCE):,}원** (기본급 포함)")
+        final_pay = int(BASE_SALARY + total_extra - INSURANCE)
         
-        st.write("**📄 제출용 상세 (스샷용)**")
-        # 데이터 가공: 제목을 한 글자로 축소하여 가로 폭 확보
+        # 금액 강조
+        st.info(f"🏦 **예상 실수령액: {final_pay:,}원** (수당: {total_extra:,}원)")
+        
+        # [스샷 전용 슬림 표]
         rep_df = period_df.copy()
-        rep_df['날짜'] = rep_df['날짜'].apply(lambda x: x[5:]) # 년도 제거
+        rep_df['날짜'] = rep_df['날짜'].apply(lambda x: x[5:]) 
         rep_df = rep_df[['날짜', '인센티브', '일반필름', '풀필름', '젤리', '케이블', '어댑터', '합계']]
-        
-        # [수정] 제목 한 글자로 변경하여 짤림 방지
         rep_df.columns = ['날짜', '인센', '일', '풀', '젤', '케', '어', '합계']
         
-        # 금액 컬럼에 콤마 추가 (문자열로 변환됨)
+        # 콤마 처리
         for col in ['인센', '합계']:
             rep_df[col] = rep_df[col].apply(lambda x: f"{x:,}")
 
-        st.dataframe(rep_df, hide_index=True, use_container_width=True)
+        # st.table은 아이폰에서 너비를 아주 잘 지켜줍니다.
+        st.table(rep_df)
+    else:
+        st.warning("저장된 실적이 없습니다.")
 
-        st.divider()
-        # 하단 상세 내역에도 콤마 적용
-        for _, row in period_df.sort_values("날짜", ascending=False).iterrows():
-            is_off = row['비고'] == "휴무"
-            title = f"📅 {row['날짜']} ({row['합계']:,}원)" if not is_off else f"📅 {row['날짜']} (🌴 휴무)"
-            with st.expander(title):
-                if is_off: st.write("휴무")
-                else:
-                    st.write(f"🔹 인센: {row['인센티브']:,}원 | 필름: {row['일반필름']}/{row['풀필름']}")
-                    st.write(f"🔹 젤리: {row['젤리']} / 케이블: {row['케이블']} / 어댑터: {row['어댑터']}")
+# 하단 아코디언은 평소 확인용으로 유지
+with st.expander("📝 일별 기록 확인 (평상시용)"):
+    for _, row in df_all.sort_values("날짜", ascending=False).iterrows():
+        st.write(f"{row['날짜']} - {row['합계']:,}원 ({row['비고']})")
