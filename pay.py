@@ -58,7 +58,7 @@ if save_btn:
         df = df[df["날짜"] != str_date]
     
     updated_df = pd.concat([df, new_data], ignore_index=True)
-    conn.update(data=updated_df)
+    conn.update(worksheet="Sheet1", data=updated_df)
     st.success("✅ 구글 시트에 저장되었습니다!")
     st.rerun()
 
