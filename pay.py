@@ -44,7 +44,7 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 가로 정렬 CSS (입력 디자인 유지) ---
+# --- 가로 정렬 CSS ---
 st.markdown("""
     <style>
     div[data-testid="stHorizontalBlock"] {
@@ -78,7 +78,7 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 2. 최근 기입 현황 (동그라미)
+# 2. 최근 기입 현황
 st.write("**🗓️ 최근 기입 현황**")
 table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
 for i in range(7):
@@ -99,7 +99,7 @@ st.markdown(table_html, unsafe_allow_html=True)
 
 st.divider()
 
-# 3. 인센티브 및 수량 입력 (기존 디자인 유지)
+# 3. 인센티브 및 수량 입력
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
@@ -138,7 +138,7 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# --- 4. [수정됨] 정산 현황 + 제출 리포트 통합 디자인 ---
+# 4. 정산 현황 및 상세 리포트 통합
 st.divider()
 st.subheader("📊 정산 및 제출 리포트")
 BASE_SALARY, INSURANCE = 3500000, 104760
@@ -154,7 +154,6 @@ if not period_df.empty:
     total_extra = period_df["합계"].sum()
     final_pay = int(BASE_SALARY + total_extra - INSURANCE)
     
-    # [1] 상단 요약 박스 (스샷용으로 그대로 사용 가능)
     st.markdown(f"""
         <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #ff4b4b; margin-bottom:15px;">
             <p style="margin:0; font-size:12px; color:#666;">정산 기간: {start_dt} ~ {end_dt}</p>
@@ -163,44 +162,45 @@ if not period_df.empty:
         </div>
     """, unsafe_allow_html=True)
     
-    # [2] 통합 리포트 표 (번호 없음, HTML 직접 제작)
-    html_code = """<table style="width:100%; border-collapse:collapse; table-layout:fixed; font-size:11px; text-align:center;">
+    # [제출용 표] 제목 복구 및 간격 최적화
+    html_code = """<table style="width:100%; border-collapse:collapse; table-layout:fixed; font-size:10px; text-align:center;">
         <tr style="background-color:#f8f9fa; border-bottom:2px solid #ddd;">
-            <th style="padding:5px; border:1px solid #eee; width:15%;">날짜</th>
-            <th style="padding:5px; border:1px solid #eee;">인센</th>
-            <th style="padding:5px; border:1px solid #eee;">일</th>
-            <th style="padding:5px; border:1px solid #eee;">풀</th>
-            <th style="padding:5px; border:1px solid #eee;">젤</th>
-            <th style="padding:5px; border:1px solid #eee;">케</th>
-            <th style="padding:5px; border:1px solid #eee;">어</th>
-            <th style="padding:5px; border:1px solid #eee;">합계</th>
+            <th style="padding:4px; border:1px solid #eee; width:14%;">날짜</th>
+            <th style="padding:4px; border:1px solid #eee;">인센티브</th>
+            <th style="padding:4px; border:1px solid #eee;">일반</th>
+            <th style="padding:4px; border:1px solid #eee;">풀</th>
+            <th style="padding:4px; border:1px solid #eee;">젤리</th>
+            <th style="padding:4px; border:1px solid #eee;">케이블</th>
+            <th style="padding:4px; border:1px solid #eee;">어댑터</th>
+            <th style="padding:4px; border:1px solid #eee;">합계</th>
         </tr>"""
     
     for _, r in period_df.iterrows():
         d_short = r['날짜'][5:]
         html_code += f"""<tr style="border-bottom:1px solid #eee;">
-            <td style="padding:5px; border:1px solid #eee;">{d_short}</td>
-            <td style="padding:5px; border:1px solid #eee;">{r['인센티브']:,}</td>
-            <td style="padding:5px; border:1px solid #eee;">{r['일반필름']}</td>
-            <td style="padding:5px; border:1px solid #eee;">{r['풀필름']}</td>
-            <td style="padding:5px; border:1px solid #eee;">{r['젤리']}</td>
-            <td style="padding:5px; border:1px solid #eee;">{r['케이블']}</td>
-            <td style="padding:5px; border:1px solid #eee;">{r['어댑터']}</td>
-            <td style="padding:5px; border:1px solid #eee; font-weight:bold;">{r['합계']:,}</td>
+            <td style="padding:4px; border:1px solid #eee;">{d_short}</td>
+            <td style="padding:4px; border:1px solid #eee;">{r['인센티브']:,}</td>
+            <td style="padding:4px; border:1px solid #eee;">{r['일반필름']}</td>
+            <td style="padding:4px; border:1px solid #eee;">{r['풀필름']}</td>
+            <td style="padding:4px; border:1px solid #eee;">{r['젤리']}</td>
+            <td style="padding:4px; border:1px solid #eee;">{r['케이블']}</td>
+            <td style="padding:4px; border:1px solid #eee;">{r['어댑터']}</td>
+            <td style="padding:4px; border:1px solid #eee; font-weight:bold;">{r['합계']:,}</td>
         </tr>"""
     html_code += "</table>"
     st.markdown(html_code, unsafe_allow_html=True)
     
     st.write("")
     
-    # [3] 기존 일별 상세 (아코디언) - 원래 디자인 유지
-    st.write("**📝 개별 상세 기록 (참고용)**")
-    # 상세 기록은 최신순으로 다시 정렬해서 보기 편하게 표시
+    # [개별 상세 기록] 항목 순서 맞춤
+    st.write("**📝 개별 상세 기록 (최신순)**")
     for _, row in period_df.sort_values("날짜", ascending=False).iterrows():
         is_off = row['비고'] == "휴무"
         title = f"📅 {row['날짜']} ({row['합계']:,}원)" if not is_off else f"📅 {row['날짜']} (🌴 휴무)"
         with st.expander(title):
             if is_off: st.write("휴무")
             else:
-                st.write(f"🔹 인센: {row['인센티브']:,}원 | 필름: {row['일반필름']}/{row['풀필름']}")
-                st.write(f"🔹 젤리: {row['젤리']} / 케이블: {row['케이블']} / 어댑터: {row['어댑터']}")
+                # 위 표와 동일하게 인센티브부터 순서대로 표시
+                st.write(f"💰 **인센티브**: {row['인센티브']:,}원")
+                st.write(f"📱 **필름**: 일반 {row['일반필름']} / 풀 {row['풀필름']}")
+                st.write(f"🔌 **기타**: 젤리 {row['젤리']} / 케이블 {row['케이블']} / 어댑터 {row['어댑터']}")
