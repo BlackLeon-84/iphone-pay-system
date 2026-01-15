@@ -97,20 +97,11 @@ if st.session_state.incen_history:
 
 add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=1000, label_visibility="collapsed")
 
-# --- [핵심] 버튼 가로 고정 CSS ---
+# 버튼 가로 고정 CSS
 st.markdown("""
     <style>
-    /* 버튼들을 감싸는 컨테이너를 가로로 강제 정렬 */
-    div[data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 10px !important;
-    }
-    div[data-testid="stHorizontalBlock"] > div {
-        width: 33.3% !important;
-        min-width: 0px !important;
-    }
+    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 10px !important; }
+    div[data-testid="stHorizontalBlock"] > div { width: 33.3% !important; min-width: 0px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -129,7 +120,7 @@ if btn_c3.button("🧹 리셋", use_container_width=True):
 
 st.write("")
 
-# 4. 필름 및 기타 항목
+# 4. 필름 및 기타 항목 (기존 2열 유지)
 f_c1, f_c2 = st.columns(2)
 v_nf = f_c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
 v_ff = f_c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -147,9 +138,9 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 (기존 상세 스타일)
+# 5. 정산 현황 및 상세 보고서
 st.divider()
-st.subheader("📊 정산 현황")
+st.subheader("📊 정산 및 상세 보고")
 BASE_SALARY, INSURANCE = 3500000, 104760
 
 if selected_date.day >= 13:
@@ -165,12 +156,23 @@ df_now = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(
 if not df_now.empty:
     df_now['날짜_dt'] = pd.to_datetime(df_now['날짜']).dt.date
     period_df = df_now[(df_now['날짜_dt'] >= start_dt) & (df_now['날짜_dt'] <= end_dt)].sort_values("날짜", ascending=False)
+    
     if not period_df.empty:
         total_extra = period_df["합계"].sum()
-        col_res1, col_res2 = st.columns(2)
-        col_res1.metric("누적 수당", f"{total_extra:,}원")
-        col_res2.metric("실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
+        c_res1, c_res2 = st.columns(2)
+        c_res1.metric("누적 수당", f"{total_extra:,}원")
+        c_res2.metric("실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
+        
+        # --- [새 기능] 제출용 상세 보고서 표 ---
+        with st.expander("📋 한눈에 보는 상세 보고서 (제출용)", expanded=False):
+            # 필요한 컬럼만 추출하여 이름 변경
+            report_df = period_df[['날짜', '인센티브', '일반필름', '풀필름', '젤리', '케이블', '어댑터', '합계']].copy()
+            report_df.columns = ['날짜', '인센', '일반', '풀', '젤리', '케이블', '어댑터', '소계']
+            st.dataframe(report_df, use_container_width=True, hide_index=True)
+            st.caption("※ 위 표를 캡처하여 보고용으로 사용하세요.")
+
         st.write("---")
+        # 기존 일별 상세 내역 (디자인 유지)
         for index, row in period_df.iterrows():
             is_off_row = row['비고'] == "휴무"
             title = f"📅 {row['날짜']} " + ("(🌴 휴무)" if is_off_row else f"({row['합계']:,}원)")
