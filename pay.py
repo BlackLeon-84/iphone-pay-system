@@ -66,11 +66,12 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 2. 1주일 현황 아이콘 (깨짐 방지 처리)
-st.write("") 
-badge_cols = st.columns(7)
-for i in range(7):
-    check_date = date.today() - timedelta(days=6-i)
+# 2. [수정] 1주일 현황 - 달력 그리드 형태 (4개씩 2줄)
+st.write("**🗓️ 최근 기입 현황**") 
+# 오늘 포함 최근 8일치를 보여주어 4x2 그리드 완성
+grid_rows = [st.columns(4), st.columns(4)]
+for i in range(8):
+    check_date = date.today() - timedelta(days=7-i)
     str_check = check_date.strftime("%Y-%m-%d")
     target_row = df_all[df_all["날짜"] == str_check]
     
@@ -81,11 +82,15 @@ for i in range(7):
         else:
             icon, color, bg = "✅", "#28a745", "#e8f5e9"
     
-    with badge_cols[i]:
+    # 그리드 배치 계산
+    row_idx = 0 if i < 4 else 1
+    col_idx = i % 4
+    
+    with grid_rows[row_idx][col_idx]:
         st.markdown(f"""
-            <div style="text-align:center; padding:5px 0; background:{bg}; border-radius:8px; border:1px solid {color}33; width:100%;">
-                <div style="font-size:10px; font-weight:bold; color:{color};">{check_date.day}</div>
-                <div style="font-size:14px;">{icon}</div>
+            <div style="text-align:center; padding:8px 0; background:{bg}; border-radius:10px; border:1px solid {color}44; margin-bottom:5px;">
+                <div style="font-size:11px; font-weight:bold; color:{color};">{check_date.day}일</div>
+                <div style="font-size:18px; margin-top:2px;">{icon}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -118,7 +123,7 @@ if btn_c3.button("🧹 리셋", use_container_width=True):
 
 st.write("")
 
-# 4. 필름 및 기타 항목
+# 4. 필름 및 기타 항목 (2열 배치)
 f_c1, f_c2 = st.columns(2)
 v_nf = f_c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
 v_ff = f_c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -136,7 +141,7 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 (기존 스타일 그대로 유지)
+# 5. 정산 현황 (기존 스타일)
 st.divider()
 st.subheader("📊 정산 현황")
 
