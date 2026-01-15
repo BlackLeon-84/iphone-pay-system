@@ -78,7 +78,7 @@ if top_c2.button("🌴 휴무", use_container_width=True):
     conn.close()
     st.rerun()
 
-# 2. 최근 기입 현황
+# 2. 최근 기입 현황 (동그라미)
 st.write("**🗓️ 최근 기입 현황**")
 table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
 for i in range(7):
@@ -99,7 +99,7 @@ st.markdown(table_html, unsafe_allow_html=True)
 
 st.divider()
 
-# 3. 인센티브 입력 및 4. 수량 입력 (기존 디자인 유지)
+# 3. 인센티브 및 수량 입력 (기존 디자인 유지)
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
@@ -138,9 +138,9 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 및 상세 (기존 디자인 유지)
+# --- 4. [수정됨] 정산 현황 + 제출 리포트 통합 디자인 ---
 st.divider()
-st.subheader("📊 정산 현황")
+st.subheader("📊 정산 및 제출 리포트")
 BASE_SALARY, INSURANCE = 3500000, 104760
 
 if selected_date.day >= 13:
@@ -148,42 +148,25 @@ if selected_date.day >= 13:
 else:
     end_dt, start_dt = selected_date.replace(day=12), (selected_date.replace(day=1) - timedelta(days=10)).replace(day=13)
 
-period_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜", ascending=False)
+period_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜", ascending=True)
 
 if not period_df.empty:
     total_extra = period_df["합계"].sum()
     final_pay = int(BASE_SALARY + total_extra - INSURANCE)
-    st.write(f"**💰 누적 수당 합계: {total_extra:,}원**")
-    st.info(f"🏦 **예상 실수령액: {final_pay:,}원**")
     
-    st.write("**📝 일별 상세 기록**")
-    for _, row in period_df.iterrows():
-        is_off = row['비고'] == "휴무"
-        title = f"📅 {row['날짜']} ({row['합계']:,}원)" if not is_off else f"📅 {row['날짜']} (🌴 휴무)"
-        with st.expander(title):
-            if is_off: st.write("휴무")
-            else:
-                st.write(f"🔹 인센: {row['인센티브']:,}원 | 필름: {row['일반필름']}/{row['풀필름']}")
-                st.write(f"🔹 젤리: {row['젤리']} / 케이블: {row['케이블']} / 어댑터: {row['어댑터']}")
-
-# 6. 제출용 스샷 모드 (HTML 직접 수동 제작)
-st.divider()
-if st.checkbox("📸 사장님 제출용 스샷 화면 보기"):
-    st.subheader("📄 정산 리포트")
-    
+    # [1] 상단 요약 박스 (스샷용으로 그대로 사용 가능)
     st.markdown(f"""
-        <div style="background-color:#f0f2f6; padding:12px; border-radius:10px; border-left:5px solid #ff4b4b; margin-bottom:15px;">
-            <p style="margin:0; font-size:12px; color:#666;">기간: {start_dt} ~ {end_dt}</p>
-            <p style="margin:4px 0; font-size:16px; font-weight:bold;">💰 총 수당 합계: {total_extra:,}원</p>
-            <p style="margin:0; font-size:20px; font-weight:bold; color:#ff4b4b;">🏦 최종 실수령액: {final_pay:,}원</p>
+        <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #ff4b4b; margin-bottom:15px;">
+            <p style="margin:0; font-size:12px; color:#666;">정산 기간: {start_dt} ~ {end_dt}</p>
+            <p style="margin:5px 0; font-size:18px; font-weight:bold;">💰 총 수당(인센+판매): {total_extra:,}원</p>
+            <p style="margin:0; font-size:22px; font-weight:bold; color:#ff4b4b;">🏦 최종 실수령액: {final_pay:,}원</p>
         </div>
     """, unsafe_allow_html=True)
-
-    # 직접 만드는 HTML 테이블 (인덱스 열 자체가 존재하지 않음)
-    report_df = period_df.sort_values("날짜").copy()
+    
+    # [2] 통합 리포트 표 (번호 없음, HTML 직접 제작)
     html_code = """<table style="width:100%; border-collapse:collapse; table-layout:fixed; font-size:11px; text-align:center;">
         <tr style="background-color:#f8f9fa; border-bottom:2px solid #ddd;">
-            <th style="padding:5px; border:1px solid #eee;">날짜</th>
+            <th style="padding:5px; border:1px solid #eee; width:15%;">날짜</th>
             <th style="padding:5px; border:1px solid #eee;">인센</th>
             <th style="padding:5px; border:1px solid #eee;">일</th>
             <th style="padding:5px; border:1px solid #eee;">풀</th>
@@ -193,7 +176,7 @@ if st.checkbox("📸 사장님 제출용 스샷 화면 보기"):
             <th style="padding:5px; border:1px solid #eee;">합계</th>
         </tr>"""
     
-    for _, r in report_df.iterrows():
+    for _, r in period_df.iterrows():
         d_short = r['날짜'][5:]
         html_code += f"""<tr style="border-bottom:1px solid #eee;">
             <td style="padding:5px; border:1px solid #eee;">{d_short}</td>
@@ -206,6 +189,18 @@ if st.checkbox("📸 사장님 제출용 스샷 화면 보기"):
             <td style="padding:5px; border:1px solid #eee; font-weight:bold;">{r['합계']:,}</td>
         </tr>"""
     html_code += "</table>"
-    
     st.markdown(html_code, unsafe_allow_html=True)
-    st.caption("위 화면을 캡처하여 제출하세요.")
+    
+    st.write("")
+    
+    # [3] 기존 일별 상세 (아코디언) - 원래 디자인 유지
+    st.write("**📝 개별 상세 기록 (참고용)**")
+    # 상세 기록은 최신순으로 다시 정렬해서 보기 편하게 표시
+    for _, row in period_df.sort_values("날짜", ascending=False).iterrows():
+        is_off = row['비고'] == "휴무"
+        title = f"📅 {row['날짜']} ({row['합계']:,}원)" if not is_off else f"📅 {row['날짜']} (🌴 휴무)"
+        with st.expander(title):
+            if is_off: st.write("휴무")
+            else:
+                st.write(f"🔹 인센: {row['인센티브']:,}원 | 필름: {row['일반필름']}/{row['풀필름']}")
+                st.write(f"🔹 젤리: {row['젤리']} / 케이블: {row['케이블']} / 어댑터: {row['어댑터']}")
