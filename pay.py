@@ -44,7 +44,7 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 가로 정렬 CSS (입력창 보호용) ---
+# --- [디자인 복구] 가로 정렬 CSS ---
 st.markdown("""
     <style>
     div[data-testid="stHorizontalBlock"] {
@@ -56,6 +56,12 @@ st.markdown("""
     div[data-testid="stHorizontalBlock"] > div {
         flex: 1 1 0% !important;
         min-width: 0 !important;
+    }
+    /* 테이블 글자 크기 축소 및 정렬 */
+    .stTable td, .stTable th {
+        padding: 4px !important;
+        font-size: 12px !important;
+        text-align: center !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -99,7 +105,7 @@ st.markdown(table_html, unsafe_allow_html=True)
 
 st.divider()
 
-# 3. 인센티브 입력 및 버튼
+# 3. 인센티브 입력
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
@@ -139,7 +145,7 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 및 상세 (기존 유지)
+# 5. [복구] 정산 현황 및 일별 상세 기록 (기존 디자인 유지)
 st.divider()
 st.subheader("📊 정산 현황")
 BASE_SALARY, INSURANCE = 3500000, 104760
@@ -156,22 +162,23 @@ if not period_df.empty:
     final_pay = int(BASE_SALARY + total_extra - INSURANCE)
     
     st.write(f"**💰 누적 수당 합계: {total_extra:,}원**")
-    st.info(f"🏦 **예상 실수령액: {final_pay:,}원**")
+    st.info(f"🏦 **예상 실수령액: {final_pay:,}원** (기본급 포함)")
     
-    with st.expander("📝 일별 상세 기록 확인"):
-        for _, row in period_df.iterrows():
-            is_off = row['비고'] == "휴무"
-            title = f"📅 {row['날짜']} ({row['합계']:,}원)" if not is_off else f"📅 {row['날짜']} (🌴 휴무)"
-            st.write(f"**{title}**")
-            if not is_off:
-                st.write(f"인센: {row['인센티브']:,} | 필름: {row['일반필름']}/{row['풀필름']} | 기타: {row['젤리']}/{row['케이블']}/{row['어댑터']}")
+    st.write("**📝 일별 상세 기록**")
+    for _, row in period_df.iterrows():
+        is_off = row['비고'] == "휴무"
+        title = f"📅 {row['날짜']} ({row['합계']:,}원)" if not is_off else f"📅 {row['날짜']} (🌴 휴무)"
+        with st.expander(title):
+            if is_off: st.write("휴무")
+            else:
+                st.write(f"🔹 인센: {row['인센티브']:,}원 | 필름: {row['일반필름']}/{row['풀필름']}")
+                st.write(f"🔹 젤리: {row['젤리']} / 케이블: {row['케이블']} / 어댑터: {row['어댑터']}")
 
-# 6. [최종] 제출용 스샷 모드
+# 6. 제출용 스샷 모드 (슬림 표)
 st.divider()
 if st.checkbox("📸 사장님 제출용 스샷 화면 보기"):
     st.subheader("📄 정산 리포트")
     
-    # 실수령액 및 인센티브 합계 강조 박스
     st.markdown(f"""
         <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left:5px solid #ff4b4b;">
             <p style="margin:0; font-size:14px; color:#666;">정산 기간: {start_dt} ~ {end_dt}</p>
@@ -182,16 +189,16 @@ if st.checkbox("📸 사장님 제출용 스샷 화면 보기"):
     
     st.write("")
     
-    # 테이블 가공
+    # [표 디자인 최적화]
     rep_df = period_df.sort_values("날짜").copy()
     rep_df['날짜'] = rep_df['날짜'].apply(lambda x: x[5:]) 
     rep_df = rep_df[['날짜', '인센티브', '일반필름', '풀필름', '젤리', '케이블', '어댑터', '합계']]
     rep_df.columns = ['날짜', '인센', '일', '풀', '젤', '케', '어', '합계']
     
+    # 금액 콤마 추가
     for col in ['인센', '합계']:
         rep_df[col] = rep_df[col].apply(lambda x: f"{x:,}")
     
-    # [해결] hide_index=True를 사용하여 번호를 완벽히 제거 (뒤틀림 없음)
-    st.dataframe(rep_df, hide_index=True, use_container_width=True)
-    
+    # st.table은 인덱스(0,1,2)가 아예 안 나오고 크기가 슬림하게 유지됩니다.
+    st.table(rep_df)
     st.caption("위 화면을 캡처하여 제출하세요.")
