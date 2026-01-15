@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 import sqlite3
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.0", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.1", layout="centered")
 
 # --- 데이터베이스 설정 ---
 def get_connection():
@@ -13,36 +13,34 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    # 실적 테이블
+    # 실적 테이블 (내부 컬럼명은 고정하되, 보여지는 이름만 가변으로 처리)
     c.execute('''CREATE TABLE IF NOT EXISTS salary
                  (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 일반필름 INTEGER, 
                   풀필름 INTEGER, 젤리 INTEGER, 케이블 INTEGER, 어댑터 INTEGER, 
                   합계 INTEGER, 비고 TEXT, PRIMARY KEY(직원명, 날짜))''')
-    # [v1.0 추가] 단가 및 항목 설정 테이블
-    c.execute('''CREATE TABLE IF NOT EXISTS settings
-                 (item_name TEXT PRIMARY KEY, price INTEGER)''')
     
-    # 초기값 설정 (데이터가 없을 때만)
-    c.execute("SELECT count(*) FROM settings")
+    # [v1.1] 설정 테이블: ID를 두어 항목명(display_name)과 단가(price) 관리
+    c.execute('''CREATE TABLE IF NOT EXISTS settings_v2
+                 (id TEXT PRIMARY KEY, display_name TEXT, price INTEGER)''')
+    
+    c.execute("SELECT count(*) FROM settings_v2")
     if c.fetchone()[0] == 0:
         default_settings = [
-            ('일반필름', 9000), ('풀필름', 18000), 
-            ('젤리', 9000), ('케이블', 15000), ('어댑터', 23000)
+            ('item1', '일반필름', 9000), ('item2', '풀필름', 18000), 
+            ('item3', '젤리', 9000), ('item4', '케이블', 15000), ('item5', '어댑터', 23000)
         ]
-        c.executemany("INSERT INTO settings VALUES (?, ?)", default_settings)
+        c.executemany("INSERT INTO settings_v2 VALUES (?, ?, ?)", default_settings)
     
     conn.commit()
     conn.close()
 
 init_db()
 
-# --- 설정 데이터 불러오기 ---
 def load_settings():
     conn = get_connection()
-    df = pd.read_sql("SELECT * FROM settings", conn)
+    df = pd.read_sql("SELECT * FROM settings_v2", conn)
     conn.close()
-    # 딕셔너리 형태로 변환 {항목명: 단가}
-    return dict(zip(df['item_name'], df['price']))
+    return df
 
 # --- 로그인 세션 ---
 STAFF_LIST = ["성훈", "남근"]
@@ -62,39 +60,43 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 사이드바: 항목 및 단가 관리 (설정 페이지) ---
+# --- 사이드바: 항목명 및 단가 관리 ---
 with st.sidebar:
-    st.header("⚙️ 시스템 설정 (v1.0)")
-    st.write("항목명과 단가를 수정하세요.")
-    current_settings = load_settings()
-    new_settings = {}
+    st.header("⚙️ 항목 및 단가 관리")
+    st.write("각 직원의 품목에 맞춰 수정하세요.")
+    df_settings = load_settings()
+    new_data = []
     
     with st.form("settings_form"):
-        for item, price in current_settings.items():
-            new_price = st.number_input(f"{item} 단가", value=int(price), step=1000)
-            new_settings[item] = new_price
+        for i, row in df_settings.iterrows():
+            st.markdown(f"**품목 {i+1}**")
+            new_name = st.text_input(f"이름", value=row['display_name'], key=f"nm_{row['id']}")
+            new_price = st.number_input(f"단가", value=int(row['price']), step=1000, key=f"pr_{row['id']}")
+            new_data.append((new_name, new_price, row['id']))
         
-        if st.form_submit_button("설정 저장"):
+        if st.form_submit_button("설정 저장 (v1.1)"):
             conn = get_connection()
             c = conn.cursor()
-            for item, price in new_settings.items():
-                c.execute("UPDATE settings SET price = ? WHERE item_name = ?", (price, item))
+            c.executemany("UPDATE settings_v2 SET display_name=?, price=? WHERE id=?", new_data)
             conn.commit()
             conn.close()
-            st.success("단가가 수정되었습니다!")
+            st.success("항목 설정이 변경되었습니다!")
             st.rerun()
 
-# 변수 할당 (계산 및 표기용)
-price_dict = load_settings()
-items = list(price_dict.keys()) # ['일반필름', '풀필름', '젤리', '케이블', '어댑터']
+# 변수 맵핑
+settings = load_settings()
+item_names = settings['display_name'].tolist()
+item_prices = settings['price'].tolist()
 
-# --- CSS 및 메인 화면 ---
+# --- CSS 복구 ---
 st.markdown("""<style>
-    div[data-testid="stHorizontalBlock"] { display: flex !important; gap: 5px !important; }
+    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 5px !important; }
     div[data-testid="stHorizontalBlock"] > div { flex: 1 1 0% !important; min-width: 0 !important; }
+    .stButton>button { width: 100%; padding: 5px 2px; }
 </style>""", unsafe_allow_html=True)
 
-st.write(f"### 💼 {user_name}님 실적 (v1.0)")
+# 1. 상단 날짜 및 [복구] 휴무 버튼
+st.write(f"### 💼 {user_name}님 실적")
 top_c1, top_c2 = st.columns([2, 1])
 selected_date = top_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = selected_date.strftime("%Y-%m-%d")
@@ -103,8 +105,15 @@ df_all = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", get_connection(
 existing_row = df_all[df_all["날짜"] == str_date]
 is_edit = not existing_row.empty
 
-# ... [입력 로직 및 최근 기입 현황은 이전과 동일 (생략 방지를 위해 핵심만 유지)] ...
-# (중략: 최근 기입 현황 테이블 코드)
+if top_c2.button("🌴 휴무", use_container_width=True):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''', (user_name, str_date, "휴무"))
+    conn.commit()
+    conn.close()
+    st.rerun()
+
+# 최근 기입 현황 (동그라미)
 st.write("**🗓️ 최근 기입 현황**")
 table_html = """<table style="width:100%; border-collapse: collapse; table-layout: fixed;"><tr style="background-color: #f8f9fa;">"""
 for i in range(7):
@@ -134,6 +143,7 @@ if "current_incen_sum" not in st.session_state or st.session_state.get("last_dat
 st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
 add_amount = st.number_input("금액 입력", min_value=0, step=1000, value=1000, label_visibility="collapsed")
 
+# [복구] 버튼 디자인
 btn_c1, btn_c2, btn_c3 = st.columns(3)
 if btn_c1.button("➕ 추가"):
     st.session_state.current_incen_sum += add_amount
@@ -147,34 +157,32 @@ if btn_c3.button("🧹 리셋"):
     st.session_state.incen_history = []
     st.rerun()
 
-# 4. 수량 입력 (설정된 항목명 사용)
+# 4. 수량 입력 (설정창 이름 반영)
 f_c1, f_c2 = st.columns(2)
-v_nf = f_c1.number_input(items[0], 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
-v_ff = f_c2.number_input(items[1], 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
-v_j = f_c1.number_input(items[2], 0, value=int(existing_row.iloc[0]["젤리"]) if is_edit else 0)
-v_c = f_c2.number_input(items[3], 0, value=int(existing_row.iloc[0]["케이블"]) if is_edit else 0)
-v_a = st.number_input(items[4], 0, value=int(existing_row.iloc[0]["어댑터"]) if is_edit else 0)
+v1 = f_c1.number_input(item_names[0], 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
+v2 = f_c2.number_input(item_names[1], 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
+v3 = f_c1.number_input(item_names[2], 0, value=int(existing_row.iloc[0]["젤리"]) if is_edit else 0)
+v4 = f_c2.number_input(item_names[3], 0, value=int(existing_row.iloc[0]["케이블"]) if is_edit else 0)
+v5 = st.number_input(item_names[4], 0, value=int(existing_row.iloc[0]["어댑터"]) if is_edit else 0)
 
 if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary"):
     # 가변 단가 적용 계산
-    daily_sum = st.session_state.current_incen_sum + \
-                (v_nf * price_dict[items[0]]) + (v_ff * price_dict[items[1]]) + \
-                (v_j * price_dict[items[2]]) + (v_c * price_dict[items[3]]) + (v_a * price_dict[items[4]])
-    
+    daily_sum = st.session_state.current_incen_sum + (v1*item_prices[0]) + (v2*item_prices[1]) + (v3*item_prices[2]) + (v4*item_prices[3]) + (v5*item_prices[4])
     conn = get_connection()
     c = conn.cursor()
     c.execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-              (user_name, str_date, st.session_state.current_incen_sum, v_nf, v_ff, v_j, v_c, v_a, daily_sum, "정상"))
+              (user_name, str_date, st.session_state.current_incen_sum, v1, v2, v3, v4, v5, daily_sum, "정상"))
     conn.commit()
     conn.close()
     st.success("저장 성공!")
     st.rerun()
 
-# 5. 정산 현황 및 제출 리포트 (v1.0)
+# 5. 리포트
 st.divider()
 st.subheader("📊 정산 및 제출 리포트")
 BASE_SALARY, INSURANCE = 3500000, 104760
 
+# 정산 기간 로직 (생략)
 if selected_date.day >= 13:
     start_dt, end_dt = date(selected_date.year, selected_date.month, 13), (selected_date.replace(day=28) + timedelta(days=20)).replace(day=12)
 else:
@@ -194,16 +202,16 @@ if not period_df.empty:
         </div>
     """, unsafe_allow_html=True)
     
-    # [제출용 표] 설정된 항목명으로 헤더 구성
+    # [표 헤더 가변 적용]
     html_code = f"""<table style="width:100%; border-collapse:collapse; table-layout:fixed; font-size:10px; text-align:center;">
         <tr style="background-color:#f8f9fa; border-bottom:2px solid #ddd;">
             <th style="padding:4px; border:1px solid #eee; width:14%;">날짜</th>
             <th style="padding:4px; border:1px solid #eee;">인센티브</th>
-            <th style="padding:4px; border:1px solid #eee;">{items[0][:2]}</th>
-            <th style="padding:4px; border:1px solid #eee;">{items[1][:2]}</th>
-            <th style="padding:4px; border:1px solid #eee;">{items[2][:2]}</th>
-            <th style="padding:4px; border:1px solid #eee;">{items[3][:2]}</th>
-            <th style="padding:4px; border:1px solid #eee;">{items[4][:2]}</th>
+            <th style="padding:4px; border:1px solid #eee;">{item_names[0][:2]}</th>
+            <th style="padding:4px; border:1px solid #eee;">{item_names[1][:2]}</th>
+            <th style="padding:4px; border:1px solid #eee;">{item_names[2][:2]}</th>
+            <th style="padding:4px; border:1px solid #eee;">{item_names[3][:2]}</th>
+            <th style="padding:4px; border:1px solid #eee;">{item_names[4][:2]}</th>
             <th style="padding:4px; border:1px solid #eee;">합계</th>
         </tr>"""
     
@@ -231,5 +239,3 @@ if not period_df.empty:
             <td style="padding:4px; border:1px solid #eee; color:#ff4b4b;">{total_extra:,}</td>
         </tr></table>"""
     st.markdown(html_code, unsafe_allow_html=True)
-
-    # 개별 상세 (생략)
