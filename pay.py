@@ -22,8 +22,8 @@ def init_db():
 
 init_db()
 
-# --- 직원 정보 ---
-USER_CREDENTIALS = {"성훈": "1234", "남근": "5678"}
+# --- 직원 명단 (비밀번호 제거) ---
+STAFF_LIST = ["성훈", "남근"]
 
 # --- 로그인 상태 확인 ---
 if "logged_in" not in st.session_state:
@@ -31,18 +31,16 @@ if "logged_in" not in st.session_state:
     st.session_state.user_name = ""
 
 if not st.session_state.logged_in:
-    st.title("🔐 직원 로그인")
+    st.title("🔐 테스트용 로그인")
     with st.form("login_form"):
-        user_id = st.selectbox("직원 이름을 선택하세요", options=list(USER_CREDENTIALS.keys()))
-        password = st.text_input("비밀번호", type="password")
-        login_btn = st.form_submit_button("로그인")
+        # 비밀번호 없이 이름만 선택
+        user_id = st.selectbox("테스트할 직원을 선택하세요", options=STAFF_LIST)
+        login_btn = st.form_submit_button("입장하기", use_container_width=True)
+        
         if login_btn:
-            if USER_CREDENTIALS[user_id] == password:
-                st.session_state.logged_in = True
-                st.session_state.user_name = user_id
-                st.rerun()
-            else:
-                st.error("비밀번호가 틀렸습니다.")
+            st.session_state.logged_in = True
+            st.session_state.user_name = user_id
+            st.rerun()
     st.stop()
 
 # --- 메인 화면 ---
@@ -71,12 +69,11 @@ df = load_data(user_name)
 existing_row = df[df["날짜"] == str_date]
 is_edit = not existing_row.empty
 
-# 2. 입력 폼 (모바일 가시성 위해 세로 배치 강조)
+# 2. 입력 폼
 with st.form("input_form"):
     st.subheader("📝 실적 입력")
     v_incen = st.number_input("💵 기본 인센티브", min_value=0, step=1000, value=int(existing_row.iloc[0]["인센티브"]) if is_edit else 0)
     
-    # 2열 배치 (모바일에서도 적당한 크기)
     c1, c2 = st.columns(2)
     v_nf = c1.number_input("일반필름", 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
     v_ff = c2.number_input("풀필름", 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
@@ -110,7 +107,7 @@ else:
 st.divider()
 st.subheader("📊 정산 현황")
 
-# 4. 상단 요약 지표 (모바일에서 가장 중요)
+# 4. 상단 요약 지표
 df = load_data(user_name)
 if not df.empty:
     df['날짜_dt'] = pd.to_datetime(df['날짜']).dt.date
@@ -123,7 +120,7 @@ if not df.empty:
         col_res2.metric("실수령액", f"{int(BASE_SALARY + total_extra - INSURANCE):,}원")
         
         st.write("---")
-        # [핵심 수정] 표 대신 카드형으로 출력
+        # 카드형 리스트
         for index, row in period_df.iterrows():
             with st.expander(f"📅 {row['날짜']} (합계: {row['합계']:,}원)"):
                 st.write(f"🔹 **기본 인센**: {row['인센티브']:,}원")
