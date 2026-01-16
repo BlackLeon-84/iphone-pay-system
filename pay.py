@@ -5,7 +5,7 @@ import sqlite3
 import re
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.2.5", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.2.6", layout="centered")
 
 # --- 유틸리티 함수 ---
 def format_comma(val):
@@ -20,14 +20,12 @@ def parse_int(val):
     except:
         return 0
 
-# --- 로그 기록 관리 ---
 if "admin_logs" not in st.session_state:
     st.session_state.admin_logs = []
 
 def add_log(msg):
     now = datetime.now().strftime("%H:%M:%S")
     st.session_state.admin_logs.insert(0, f"[{now}] {msg}")
-    # 로그는 최신 5개까지만 유지
     if len(st.session_state.admin_logs) > 5:
         st.session_state.admin_logs.pop()
 
@@ -38,16 +36,21 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
+    # 품목 7개 대응을 위한 컬럼 확장 (항목6, 항목7 추가)
     c.execute('''CREATE TABLE IF NOT EXISTS salary
-                 (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 일반필름 INTEGER, 
-                  풀필름 INTEGER, 젤리 INTEGER, 케이블 INTEGER, 어댑터 INTEGER, 
-                  합계 INTEGER, 비고 TEXT, PRIMARY KEY(직원명, 날짜))''')
+                 (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 
+                  item1 INTEGER, item2 INTEGER, item3 INTEGER, item4 INTEGER, item5 INTEGER, 
+                  item6 INTEGER, item7 INTEGER, 합계 INTEGER, 비고 TEXT, PRIMARY KEY(직원명, 날짜))''')
+    
+    # 레거시 테이블 대응 (컬럼이 없을 경우 자동 추가)
+    try:
+        c.execute("ALTER TABLE salary ADD COLUMN item6 INTEGER DEFAULT 0")
+        c.execute("ALTER TABLE salary ADD COLUMN item7 INTEGER DEFAULT 0")
+    except: pass
+
     c.execute('''CREATE TABLE IF NOT EXISTS settings_v3
                  (직원명 TEXT, id TEXT, display_name TEXT, price INTEGER, PRIMARY KEY(직원명, id))''')
-    try:
-        c.execute("ALTER TABLE staff_configs ADD COLUMN insurance INTEGER DEFAULT 104760")
-    except:
-        pass
+    
     c.execute('''CREATE TABLE IF NOT EXISTS staff_configs
                  (직원명 TEXT PRIMARY KEY, base_salary INTEGER, start_day INTEGER, insurance INTEGER)''')
     conn.commit()
@@ -59,10 +62,15 @@ init_db()
 def load_user_settings(name):
     conn = get_connection()
     df = pd.read_sql("SELECT * FROM settings_v3 WHERE 직원명 = ?", conn, params=(name,))
-    if df.empty:
-        default = [(name, 'item1', '일반필름', 9000), (name, 'item2', '풀필름', 18000), 
-                   (name, 'item3', '젤리', 9000), (name, 'item4', '케이블', 15000), (name, 'item5', '어댑터', 23000)]
+    if df.empty or len(df) < 7:
+        # 기존 5개에 2개 더 추가하여 초기화
         c = conn.cursor()
+        c.execute("DELETE FROM settings_v3 WHERE 직원명 = ?", (name,))
+        default = [
+            (name, 'item1', '일반필름', 9000), (name, 'item2', '풀필름', 18000), 
+            (name, 'item3', '젤리', 9000), (name, 'item4', '케이블', 15000), 
+            (name, 'item5', '어댑터', 23000), (name, 'item6', '추가항목1', 0), (name, 'item7', '추가항목2', 0)
+        ]
         c.executemany("INSERT INTO settings_v3 VALUES (?, ?, ?, ?)", default)
         conn.commit()
         df = pd.read_sql("SELECT * FROM settings_v3 WHERE 직원명 = ?", conn, params=(name,))
@@ -98,7 +106,7 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 사이드바 (관리자 통합 제어 및 로그) ---
+# --- 사이드바 (관리자 설정 및 로그) ---
 with st.sidebar:
     st.header("⚙️ 시스템 관리")
     if user_name == "태완":
@@ -110,7 +118,7 @@ with st.sidebar:
         new_items = []
         
         with st.form(f"admin_form_{target_staff}"):
-            st.subheader(f"📦 {target_staff} 설정")
+            st.subheader(f"📦 {target_staff} 품목(7개)")
             for i, row in user_settings.iterrows():
                 n_name = st.text_input(f"품목{i+1} 이름", value=row['display_name'], key=f"it_n_{target_staff}_{row['id']}")
                 p_val = st.text_input(f"{n_name} 단가", value=format_comma(row['price']), key=f"it_p_{target_staff}_{row['id']}")
@@ -132,7 +140,6 @@ with st.sidebar:
                 add_log(f"✅ {target_staff} 설정 저장 성공")
                 st.rerun()
 
-        # 로그창 영역
         if st.session_state.admin_logs:
             st.markdown("---")
             st.caption("🕒 **관리 로그 (최근 5건)**")
@@ -145,25 +152,24 @@ with st.sidebar:
         st.session_state.logged_in = False
         st.rerun()
 
-# 데이터 로드
 current_user_settings = load_user_settings(user_name)
 item_names = current_user_settings['display_name'].tolist()
 item_prices = current_user_settings['price'].tolist()
 my_config = load_staff_config(user_name)
 
-# --- CSS (디자인 유지) ---
+# --- CSS (1.0 디자인 유지 및 표 최적화) ---
 st.markdown("""
     <style>
     .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }
     div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; gap: 5px !important; }
     div[data-testid="stHorizontalBlock"] > div { flex: 1 1 0% !important; min-width: 0 !important; }
     .stButton>button { width: 100% !important; height: 42px !important; padding: 0px !important; font-weight: bold; }
-    .report-table { width: 100%; border-collapse: collapse; font-size: 10px; text-align: center; }
+    .report-table { width: 100%; border-collapse: collapse; font-size: 9px; text-align: center; }
     .report-table th, .report-table td { border: 1px solid #eee; padding: 4px 1px !important; white-space: nowrap; }
     .report-table th { background-color: #f8f9fa; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
-st.markdown('<p class="version-text">v1.2.5-stable</p>', unsafe_allow_html=True)
+st.markdown('<p class="version-text">v1.2.6-stable</p>', unsafe_allow_html=True)
 
 # 1. 상단 실적 입력
 st.write(f"### 💼 {user_name}님 실적")
@@ -177,7 +183,7 @@ is_edit = not existing_row.empty
 
 if top_c2.button("🌴 휴무", use_container_width=True):
     conn = get_connection()
-    conn.cursor().execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, ?)''', (user_name, str_date, "휴무"))
+    conn.cursor().execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?)''', (user_name, str_date, "휴무"))
     conn.commit()
     conn.close()
     st.rerun()
@@ -199,7 +205,7 @@ st.markdown(t_html, unsafe_allow_html=True)
 
 st.divider()
 
-# 인센티브 로직
+# 인센티브
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and existing_row.iloc[0]["인센티브"] > 0 else []
@@ -222,19 +228,21 @@ if btn_c3.button("🧹 리셋"):
     st.session_state.incen_history = []
     st.rerun()
 
-# 수량 입력
+# 수량 입력 (품목 7개 대응)
 f_c1, f_c2 = st.columns(2)
-v1 = f_c1.number_input(item_names[0], 0, value=int(existing_row.iloc[0]["일반필름"]) if is_edit else 0)
-v2 = f_c2.number_input(item_names[1], 0, value=int(existing_row.iloc[0]["풀필름"]) if is_edit else 0)
-v3 = f_c1.number_input(item_names[2], 0, value=int(existing_row.iloc[0]["젤리"]) if is_edit else 0)
-v4 = f_c2.number_input(item_names[3], 0, value=int(existing_row.iloc[0]["케이블"]) if is_edit else 0)
-v5 = st.number_input(item_names[4], 0, value=int(existing_row.iloc[0]["어댑터"]) if is_edit else 0)
+v1 = f_c1.number_input(item_names[0], 0, value=int(existing_row.iloc[0]["item1"]) if is_edit else 0)
+v2 = f_c2.number_input(item_names[1], 0, value=int(existing_row.iloc[0]["item2"]) if is_edit else 0)
+v3 = f_c1.number_input(item_names[2], 0, value=int(existing_row.iloc[0]["item3"]) if is_edit else 0)
+v4 = f_c2.number_input(item_names[3], 0, value=int(existing_row.iloc[0]["item4"]) if is_edit else 0)
+v5 = f_c1.number_input(item_names[4], 0, value=int(existing_row.iloc[0]["item5"]) if is_edit else 0)
+v6 = f_c2.number_input(item_names[5], 0, value=int(existing_row.iloc[0]["item6"]) if is_edit else 0)
+v7 = st.number_input(item_names[6], 0, value=int(existing_row.iloc[0]["item7"]) if is_edit else 0)
 
 if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary"):
-    daily_sum = st.session_state.current_incen_sum + (v1*item_prices[0]) + (v2*item_prices[1]) + (v3*item_prices[2]) + (v4*item_prices[3]) + (v5*item_prices[4])
+    daily_sum = st.session_state.current_incen_sum + (v1*item_prices[0]) + (v2*item_prices[1]) + (v3*item_prices[2]) + (v4*item_prices[3]) + (v5*item_prices[4]) + (v6*item_prices[5]) + (v7*item_prices[6])
     conn = get_connection()
-    conn.cursor().execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-              (user_name, str_date, st.session_state.current_incen_sum, v1, v2, v3, v4, v5, daily_sum, "정상"))
+    conn.cursor().execute('''INSERT OR REPLACE INTO salary VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+              (user_name, str_date, st.session_state.current_incen_sum, v1, v2, v3, v4, v5, v6, v7, daily_sum, "정상"))
     conn.commit()
     conn.close()
     st.success("저장 완료!")
@@ -264,8 +272,15 @@ if not period_df.empty:
         <p style="margin:5px 0; font-size:18px; font-weight:bold;">💰 총 수당 합계: {total_extra:,}원</p>
         <p style="margin:0; font-size:22px; font-weight:bold; color:#ff4b4b;">🏦 실수령 예상: {final_pay:,}원</p></div>""", unsafe_allow_html=True)
     
-    html = f"""<table class="report-table"><tr><th>날짜</th><th>인센</th><th>{item_names[0][:2]}</th><th>{item_names[1][:2]}</th><th>{item_names[2][:2]}</th><th>{item_names[3][:2]}</th><th>{item_names[4][:2]}</th><th>합계</th></tr>"""
+    # 7개 품목 표 구성
+    headers = ["날짜", "인센"] + [name[:2] for name in item_names] + ["합계"]
+    html = f"""<table class="report-table"><tr>"""
+    for h in headers: html += f"<th>{h}</th>"
+    html += "</tr>"
+    
     for _, r in period_df.iterrows():
-        html += f"<tr><td>{datetime.strptime(r['날짜'], '%Y-%m-%d').day}일</td><td>{r['인센티브']:,}</td><td>{r['일반필름']}</td><td>{r['풀필름']}</td><td>{r['젤리']}</td><td>{r['케이블']}</td><td>{r['어댑터']}</td><td style='font-weight:bold;'>{r['합계']:,}</td></tr>"
-    html += f"<tr style='background-color:#fff3f3; font-weight:bold;'><td>합계</td><td>{period_df['인센티브'].sum():,}</td><td>{period_df['일반필름'].sum()}</td><td>{period_df['풀필름'].sum()}</td><td>{period_df['젤리'].sum()}</td><td>{period_df['케이블'].sum()}</td><td>{period_df['어댑터'].sum()}</td><td style='color:#ff4b4b;'>{total_extra:,}</td></tr></table>"
+        html += f"<tr><td>{datetime.strptime(r['날짜'], '%Y-%m-%d').day}일</td><td>{r['인센티브']:,}</td><td>{r['item1']}</td><td>{r['item2']}</td><td>{r['item3']}</td><td>{r['item4']}</td><td>{r['item5']}</td><td>{r['item6']}</td><td>{r['item7']}</td><td style='font-weight:bold;'>{r['합계']:,}</td></tr>"
+    
+    # 합계행
+    html += f"<tr style='background-color:#fff3f3; font-weight:bold;'><td>합계</td><td>{period_df['인센티브'].sum():,}</td><td>{period_df['item1'].sum()}</td><td>{period_df['item2'].sum()}</td><td>{period_df['item3'].sum()}</td><td>{period_df['item4'].sum()}</td><td>{period_df['item5'].sum()}</td><td>{period_df['item6'].sum()}</td><td>{period_df['item7'].sum()}</td><td style='color:#ff4b4b;'>{total_extra:,}</td></tr></table>"
     st.markdown(html, unsafe_allow_html=True)
