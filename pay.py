@@ -5,9 +5,10 @@ import gspread
 from google.oauth2.service_account import Credentials
 import re
 import os
+import base64
 
 # 소프트웨어 버전
-SW_VERSION = "v1.5.10"
+SW_VERSION = "v1.5.11"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
@@ -18,24 +19,37 @@ SHEET_NAME = "아이폰정산"
 def get_gsheet_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
-        # 1. Secrets 우선 확인
         if "gcp_service_account" in st.secrets:
-            creds_dict = dict(st.secrets["gcp_service_account"])
-            # 키값 내의 줄바꿈 문자 정제 (\n 기호 처리)
-            if "private_key" in creds_dict:
-                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
-            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        # 2. 로컬 파일 확인
+            creds_info = dict(st.secrets["gcp_service_account"])
+            if "private_key" in creds_info:
+                pk = creds_info["private_key"]
+                
+                # [강력 정제 로직] 
+                # 1. 헤더/푸터 제외한 알맹이만 추출
+                inner = pk.split("-----BEGIN PRIVATE KEY-----")[-1].split("-----END PRIVATE KEY-----")[0]
+                # 2. 모든 공백, 줄바꿈, 특수 기호(\n, \xa0 등)를 완전히 제거
+                inner = re.sub(r'\s+', '', inner).replace("\\n", "")
+                
+                # 3. Base64 길이를 4의 배수로 강제 맞춤 (Padding 보정)
+                missing_padding = len(inner) % 4
+                if missing_padding:
+                    inner += "=" * (4 - missing_padding)
+                
+                # 4. 깨끗한 본문으로 재조립
+                creds_info["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{inner}\n-----END PRIVATE KEY-----\n"
+
+            creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         elif os.path.exists("google_keys.json"):
             creds = Credentials.from_service_account_file("google_keys.json", scopes=scope)
         else:
-            st.error("❌ 구글 인증 정보가 없습니다.")
+            st.error("❌ 인증 정보가 없습니다.")
             st.stop()
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"⚠️ 인증 오류 발생: {e}")
         st.stop()
 
+# --- 데이터 로드 및 저장 (기존과 동일) ---
 def load_data_from_gsheet():
     try:
         client = get_gsheet_client()
@@ -69,7 +83,7 @@ def save_to_gsheet(df_row):
     except Exception as e:
         st.error(f"저장 실패: {e}"); return False
 
-# --- 한국 시간 및 유틸리티 ---
+# --- 공통 유틸리티 및 로그인 디자인 (기존 태완님 시스템 유지) ---
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 def format_comma(val):
     try: return "{:,}".format(int(str(val).replace(",", "")))
@@ -77,6 +91,9 @@ def format_comma(val):
 def parse_int(val):
     try: return int(re.sub(r'[^0-9]', '', str(val)))
     except: return 0
+
+# 로그인 및 UI 로직 (이하 생략 - 기존 코드 그대로 사용)
+# (이미 잘 작동하던 STAFF_LIST, UI 디자인, 정산 리포트 코드를 그대로 붙여넣으세요)
 
 # --- 로그인 세션 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
