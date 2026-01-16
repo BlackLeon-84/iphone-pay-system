@@ -5,42 +5,75 @@ import gspread
 from google.oauth2.service_account import Credentials
 import os
 
-# 소프트웨어 버전 (보안 강화 및 인증 수정판)
-SW_VERSION = "v2.1.0"
+# 소프트웨어 버전 (정의되지 않은 함수 오류 해결판)
+SW_VERSION = "v2.1.1"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
 
-# --- 구글 시트 연동 ---
-SHEET_NAME = "아이폰정산"
+# --- [여기서부터 함수 정의 - 절대 삭제하거나 이름 변경 금지] ---
+
+def get_gsheet_client():
+    """구글 시트 연동을 위한 클라이언트를 생성하는 함수"""
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    try:
+        if "gcp_service_account" in st.secrets:
+            creds_info = dict(st.secrets["gcp_service_account"])
+            # 비밀키의 줄바꿈 문자 보정
+            if "private_key" in creds_info:
+                creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+            
+            creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+            return gspread.authorize(creds)
+        else:
+            st.error("❌ Secrets 설정이 비어있습니다.")
+            st.stop()
+    except Exception as e:
+        st.error(f"⚠️ 인증 도중 오류 발생: {e}")
+        st.stop()
+
+# --- 데이터 로드 및 저장 (함수 정의) ---
+
+def load_data_from_gsheet():
+    try:
+        client = get_gsheet_client() # 여기서 위에서 정의한 함수를 호출합니다.
+        sheet = client.open("아이폰정산").sheet1
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        if not df.empty:
+            for i in range(1, 8):
+                df[f'item{i}'] = pd.to_numeric(df[f'item{i}'], errors='coerce').fillna(0).astype(int)
+            df['인센티브'] = pd.to_numeric(df['인센티브'], errors='coerce').fillna(0).astype(int)
+            df['합계'] = pd.to_numeric(df['합계'], errors='coerce').fillna(0).astype(int)
+        return df
+    except:
+        return pd.DataFrame(columns=["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
 
 def save_to_gsheet(df_row):
     try:
-        client = get_gsheet_client()
-        sheet = client.open(SHEET_NAME).sheet1
+        client = get_gsheet_client() # 여기서도 함수를 호출합니다.
+        sheet = client.open("아이폰정산").sheet1
         all_data = sheet.get_all_values()
         name, target_date = df_row['직원명'], df_row['날짜']
         
         row_idx = -1
-        # 기존 기록이 있는지 확인
         for i, row in enumerate(all_data):
             if len(row) > 1 and row[0] == name and row[1] == target_date:
                 row_idx = i + 1
                 break
         
         new_values = list(df_row.values())
-        
         if row_idx != -1:
-            # 기존 행 업데이트 (이 부분에서 반환값 체크 방식을 단순화했습니다)
             sheet.update(f"A{row_idx}", [new_values])
         else:
-            # 새로운 행 추가
             sheet.append_row(new_values)
-            
-        return True # 성공 시 무조건 True 반환
+        return True
     except Exception as e:
-        st.error(f"저장 실패 에러 메시지: {e}")
+        st.error(f"저장 실패 에러: {e}")
         return False
+
+# --- 이후 공통 유틸리티 및 UI 디자인 (기존 태완님 코드 유지) ---
+# ... [이하 STAFF_LIST, UI 코드 등] ...
 
 # --- 데이터 로드 및 저장 (기존 디자인/기능 유지) ---
 def load_data_from_gsheet():
