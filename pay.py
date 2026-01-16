@@ -7,7 +7,7 @@ import re
 import os
 
 # 소프트웨어 버전
-SW_VERSION = "v1.5.9"
+SW_VERSION = "v1.5.10"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
@@ -18,34 +18,23 @@ SHEET_NAME = "아이폰정산"
 def get_gsheet_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
+        # 1. Secrets 우선 확인
         if "gcp_service_account" in st.secrets:
-            creds_info = dict(st.secrets["gcp_service_account"])
-            if "private_key" in creds_info:
-                pk = creds_info["private_key"]
-                
-                # [필살기] 모든 특수 쓰레기 문자 제거 로직
-                # 1. 헤더와 푸터 사이의 내용만 추출
-                match = re.search(r'-----BEGIN PRIVATE KEY-----(.*)-----END PRIVATE KEY-----', pk, re.DOTALL)
-                if match:
-                    inner_content = match.group(1)
-                    # 2. 알파벳, 숫자, +, /, = 이외의 모든 문자(특수문자, 따옴표, 줄바꿈 등)를 제거
-                    clean_inner = re.sub(r'[^A-Za-z0-9\+/=]', '', inner_content)
-                    # 3. 깨끗한 본문으로 재조립
-                    creds_info["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{clean_inner}\n-----END PRIVATE KEY-----\n"
-
-            creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            # 키값 내의 줄바꿈 문자 정제 (\n 기호 처리)
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        # 2. 로컬 파일 확인
         elif os.path.exists("google_keys.json"):
             creds = Credentials.from_service_account_file("google_keys.json", scopes=scope)
         else:
-            st.error("❌ 인증 정보를 찾을 수 없습니다.")
+            st.error("❌ 구글 인증 정보가 없습니다.")
             st.stop()
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"⚠️ 인증 오류 발생: {e}")
-        st.info("비밀키 데이터에 읽을 수 없는 문자가 섞여 있습니다. Secrets의 내용을 지우고 메모장에서 다시 복사해보세요.")
         st.stop()
-
-# --- 이하 load_data_from_gsheet 및 모든 UI 로직 (이전과 동일하게 유지) ---
 
 def load_data_from_gsheet():
     try:
@@ -109,7 +98,7 @@ my_config = {"base_salary": 3500000, "start_day": 13, "insurance": 104760}
 item_names = ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2']
 item_prices = [9000, 18000, 9000, 15000, 23000, 0, 0]
 
-# --- CSS 디자인 ---
+# --- 디자인 ---
 st.markdown("""
     <style>
     [data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; }
@@ -126,14 +115,17 @@ st.markdown("""
     .report-table th, .report-table td { border: 1px solid #eee; padding: 8px 4px; white-space: nowrap; }
     .report-table th { background-color: #f8f9fa; color: #333; }
     .total-row { background-color: #f1f8e9; font-weight: bold; }
-    .calc-detail { font-size: 14px; color: #555; line-height: 1.6; background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px dashed #ccc; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-st.write(f"### 💼 {user_name}님 실적 (Sync)")
+st.write(f"### 💼 {user_name}님 실적")
 
 # 데이터 로드
 df_all = load_data_from_gsheet()
+
+# 날짜 선택 및 나머지 UI 생략 없이 v1.5.2 디자인 그대로 유지...
+# (기존의 7일 현황, 인센티브 버튼, 품목 수량 입력, 정산 리포트 코드를 여기에 붙여넣으시면 됩니다)
+# 지면 관계상 핵심 로직 위주로 구성했습니다. 태완님이 가지고 계신 v1.5.2의 UI 부분을 그대로 이어 붙이셔도 됩니다.
 
 # 날짜 선택
 t_c1, t_c2 = st.columns([1.2, 0.8])
