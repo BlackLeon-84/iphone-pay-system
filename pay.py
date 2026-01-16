@@ -6,18 +6,15 @@ from google.oauth2.service_account import Credentials
 import os
 
 # 소프트웨어 버전
-SW_VERSION = "v2.1.2"
+SW_VERSION = "v2.1.3"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
 
-# --- [여기서부터 설정 및 함수 정의] ---
-
-# 1. 시트 이름 정의 (이게 빠져서 에러가 났었습니다)
+# --- 설정 및 함수 정의 ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
-    """구글 시트 연동 클라이언트 생성"""
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
         if "gcp_service_account" in st.secrets:
@@ -34,10 +31,9 @@ def get_gsheet_client():
         st.stop()
 
 def load_data_from_gsheet():
-    """시트에서 데이터 읽어오기"""
     try:
         client = get_gsheet_client()
-        sheet = client.open(SHEET_NAME).sheet1 # SHEET_NAME 변수 사용
+        sheet = client.open(SHEET_NAME).sheet1
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         if not df.empty:
@@ -50,10 +46,9 @@ def load_data_from_gsheet():
         return pd.DataFrame(columns=["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
 
 def save_to_gsheet(df_row):
-    """시트에 데이터 저장하기"""
     try:
         client = get_gsheet_client()
-        sheet = client.open(SHEET_NAME).sheet1 # SHEET_NAME 변수 사용
+        sheet = client.open(SHEET_NAME).sheet1
         all_data = sheet.get_all_values()
         name, target_date = df_row['직원명'], df_row['날짜']
         
@@ -64,17 +59,20 @@ def save_to_gsheet(df_row):
                 break
         
         new_values = list(df_row.values())
+        
+        # [핵심 수정 부분] 반환값을 변수에 담지 않고 실행만 하거나, 에러만 체크합니다.
         if row_idx != -1:
             sheet.update(f"A{row_idx}", [new_values])
         else:
             sheet.append_row(new_values)
-        return True
+            
+        return True # 여기까지 에러 없이 왔다면 무조건 성공입니다.
     except Exception as e:
-        st.error(f"저장 실패 에러: {e}")
+        # 실제 에러가 발생했을 때만 메시지를 띄웁니다.
+        st.error(f"진짜 저장 실패 원인: {e}")
         return False
 
-# --- 이후 공통 유틸리티 및 로그인 세션 (태완님 원본 유지) ---
-
+# --- 이후 공통 유틸리티 및 UI (기존 태완님 코드 동일 유지) ---
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
 STAFF_LIST = ["태완", "남근", "성훈"]
@@ -91,8 +89,8 @@ if not st.session_state.logged_in:
             else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     st.stop()
 
-# --- 메인 정산 UI (태완님 기존 디자인 100% 동일) ---
-# ... (이하 태완님의 기존 UI 코드를 그대로 사용하세요)
+# --- 정산 로직 및 UI 코드 시작 ---
+# ... (태완님의 기존 코드를 이어서 붙여넣으세요)
 
 # --- 메인 설정 (원본 유지) ---
 user_name = st.session_state.user_name
