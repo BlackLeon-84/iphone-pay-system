@@ -7,12 +7,12 @@ import re
 import os
 
 # 소프트웨어 버전
-SW_VERSION = "v1.9.1"
+SW_VERSION = "v1.9.2"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
 
-# --- 구글 시트 연동 (디버깅 모드) ---
+# --- 구글 시트 연동 (쓰레기 값 강제 세척 로직) ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
@@ -22,44 +22,44 @@ def get_gsheet_client():
             creds_info = dict(st.secrets["gcp_service_account"])
             pk = creds_info.get("private_key", "")
             
-            # [진단 로직] 태완님, 여기서 에러 원인을 찾습니다.
-            # 1. 헤더/푸터 제외한 실제 키 데이터 추출
-            inner_key = pk.split("-----BEGIN PRIVATE KEY-----")[-1].split("-----END PRIVATE KEY-----")[0]
-            # 2. 모든 공백 및 줄바꿈 제거
-            inner_key = re.sub(r'\s+', '', inner_key).replace("\\n", "")
+            # [강력 세척 로직]
+            # 1. 텍스트에서 실제 Base64 문자가 아닌 것(특수바이트, \x94 등)을 싹 제거합니다.
+            # A-Z, a-z, 0-9, +, /, = 만 남깁니다.
+            inner_key = re.sub(r'[^A-Za-z0-9\+/=]', '', pk.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", ""))
             
-            # 현재 글자 수 진단 (이게 4의 배수가 아니면 에러가 납니다)
-            key_len = len(inner_key)
-            if key_len % 4 != 0:
-                # 4의 배수가 아니면 부족한 만큼 '='를 채워넣어 강제로 고칩니다.
-                inner_key += "=" * (4 - (key_len % 4))
+            # 2. 길이를 4의 배수로 강제 보정
+            missing_padding = len(inner_key) % 4
+            if missing_padding:
+                inner_key += "=" * (4 - missing_padding)
             
-            # 최종 키 재조립
+            # 3. 깨끗하게 닦인 키로 재조립
             creds_info["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{inner_key}\n-----END PRIVATE KEY-----\n"
             
             creds = Credentials.from_service_account_info(creds_info, scopes=scope)
             return gspread.authorize(creds)
         else:
-            st.error("❌ Secrets 설정에서 [gcp_service_account] 항목을 찾을 수 없습니다.")
+            st.error("❌ Secrets 설정 오류")
             st.stop()
     except Exception as e:
-        # ⚠️ 여기서 어떤 에러인지 정확히 보여줍니다.
-        st.error(f"🛑 인증 진단 결과: {e}")
-        st.info(f"현재 인식된 키 길이: {len(inner_key) if 'inner_key' in locals() else '알수없음'}자")
+        st.error(f"🛑 최종 세척 시도 중 오류: {e}")
+        st.info("비밀키 텍스트 내의 특수 기호를 제거 중입니다. 잠시만 기다려주세요.")
         st.stop()
 
-# --- 데이터 로드/저장 및 기존 디자인 로직 (변경 금지 적용) ---
-# [태완님이 쓰시던 v1.5.11 버전의 나머지 UI 코드를 그대로 유지합니다]
+# --- 데이터 로드 및 저장 (디자인/내용 변경 금지) ---
 def load_data_from_gsheet():
     try:
         client = get_gsheet_client()
         sheet = client.open(SHEET_NAME).sheet1
         data = sheet.get_all_records()
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+        if not df.empty:
+            for i in range(1, 8):
+                df[f'item{i}'] = pd.to_numeric(df[f'item{i}'], errors='coerce').fillna(0).astype(int)
+            df['인센티브'] = pd.to_numeric(df['인센티브'], errors='coerce').fillna(0).astype(int)
+            df['합계'] = pd.to_numeric(df['합계'], errors='coerce').fillna(0).astype(int)
+        return df
     except:
         return pd.DataFrame(columns=["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
-
-# (이하 기존 STAFF_LIST, UI 디자인, 정산 리포트 코드 그대로...)
 
 def save_to_gsheet(df_row):
     try:
@@ -79,8 +79,11 @@ def save_to_gsheet(df_row):
     except Exception as e:
         st.error(f"저장 실패: {e}"); return False
 
-# --- 공통 유틸리티 ---
+# --- 태완님 기존 UI 및 로직 (100% 보존) ---
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
+
+# (이후 기존 STAFF_LIST, UI 디자인 코드를 그대로 이어 붙여넣으세요)
+# ...
 
 # --- 로그인 세션 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
