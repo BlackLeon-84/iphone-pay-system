@@ -31,23 +31,33 @@ def get_gsheet_client():
         st.stop()
 
 def load_data_from_gsheet():
+    # 기본 틀 정의 (에러 방지용)
+    columns = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"]
     try:
         client = get_gsheet_client()
-        # 파일이 있는지 먼저 확인
-        try:
-            sheet = client.open(SHEET_NAME).sheet1
-        except Exception as e:
-            st.error(f"❌ '{SHEET_NAME}' 파일을 찾을 수 없습니다.")
-            st.info(f"구글 시트에서 새 파일을 만드시고 공유 설정을 확인해주세요.")
-            st.stop()
-            
+        sheet = client.open(SHEET_NAME).sheet1
         data = sheet.get_all_records()
+        
+        if not data:
+            return pd.DataFrame(columns=columns)
+            
         df = pd.DataFrame(data)
-        # (이하 기존 데이터 처리 로직 동일...)
+        
+        # 만약 시트에 특정 열이 없으면 강제로 빈 열을 만들어 줍니다 (KeyError 방지)
+        for col in columns:
+            if col not in df.columns:
+                df[col] = ""
+        
+        # 숫자 데이터 변환 로직 (기존 유지)
+        for i in range(1, 8):
+            df[f'item{i}'] = pd.to_numeric(df[f'item{i}'], errors='coerce').fillna(0).astype(int)
+        df['인센티브'] = pd.to_numeric(df['인센티브'], errors='coerce').fillna(0).astype(int)
+        df['합계'] = pd.to_numeric(df['합계'], errors='coerce').fillna(0).astype(int)
+        
         return df
     except Exception as e:
-        # 파일은 있는데 시트가 비어있을 경우 기본 틀 제공
-        return pd.DataFrame(columns=["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
+        # 아예 연결이 안 되거나 파일이 없을 때
+        return pd.DataFrame(columns=columns)
 
 def save_to_gsheet(df_row):
     try:
