@@ -213,3 +213,45 @@ if st.button("✅ 최종 실적 저장", type="primary", use_container_width=Tru
 
 # --- 정산 리포트 (하단 생략, 기존과 동일) ---
 # ... (이전 코드의 리포트 부분 유지)
+
+# --- 정산 리포트 ---
+st.divider()
+st.subheader("📊 정산 리포트")
+s_day = my_config['start_day']
+if sel_date.day >= s_day:
+    start_dt = date(sel_date.year, sel_date.month, s_day)
+    nm, ny = (sel_date.month+1, sel_date.year) if sel_date.month < 12 else (1, sel_date.year+1)
+    end_dt = date(ny, nm, s_day) - timedelta(days=1)
+else:
+    end_dt = date(sel_date.year, sel_date.month, s_day) - timedelta(days=1)
+    pm, py = (sel_date.month-1, sel_date.year) if sel_date.month > 1 else (12, sel_date.year-1)
+    start_dt = date(py, pm, s_day)
+
+p_df = df_all[(df_all["직원명"] == user_name) & (pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
+
+if not p_df.empty:
+    total_incen = p_df["인센티브"].sum()
+    total_extra = p_df["합계"].sum()
+    total_items = [p_df[f"item{i}"].sum() for i in range(1, 8)]
+    final_pay = int(my_config['base_salary'] + total_extra - my_config['insurance'])
+    
+    st.info(f"📅 정산기간: {start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')}")
+    st.markdown(f'<div>➕ 기본급: {my_config["base_salary"]:,}원<br>➕ 실적합계: {total_extra:,}원<br>➖ 보험료: {my_config["insurance"]:,}원</div>', unsafe_allow_html=True)
+    st.markdown(f"### **🏦 실수령 예상: {final_pay:,}원**")
+    
+    headers = ["날짜", "인센"] + [n[:2] for n in item_names] + ["합계"]
+    h_html = "".join([f"<th>{h}</th>" for h in headers])
+    rows_html = ""
+    for _, r in p_df.iterrows():
+        is_h = r['비고'] == "휴무"
+        row_style = 'style="background-color: #fffde7;"' if is_h else ""
+        rows_html += f"<tr {row_style}><td>{datetime.strptime(r['날짜'], '%Y-%m-%d').day}일</td>"
+        if is_h: rows_html += '<td colspan="9" style="text-align:center; color:#f57f17; font-weight:bold;">🌴 휴무</td>'
+        else:
+            rows_html += f"<td>{int(r['인센티브']):,}</td>"
+            for i in range(1, 8): rows_html += f"<td>{int(r[f'item{i}'])}</td>"
+            rows_html += f'<td style="font-weight:bold; color:blue;">{int(r["합계"]):,}</td>'
+        rows_html += "</tr>"
+    
+    total_row_html = f'<tr class="total-row"><td>합계</td><td>{total_incen:,}</td>' + "".join([f"<td>{t}</td>" for t in total_items]) + f'<td style="color:blue;">{total_extra:,}</td></tr>'
+    st.markdown(f'<div style="overflow-x:auto;"><table class="report-table"><tr>{h_html}</tr>{rows_html}{total_row_html}</table></div>', unsafe_allow_html=True)
