@@ -16,12 +16,21 @@ st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
-    key_file = "google_keys.json"
-    if not os.path.exists(key_file):
-        st.error(f"❌ '{key_file}' 파일이 없습니다. 폴더에 파일을 넣어주세요.")
-        st.stop()
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name(key_file, scope)
+    
+    # [중요] Secrets를 1순위로 확인하게 합니다.
+    if "gcp_service_account" in st.secrets:
+        creds_info = dict(st.secrets["gcp_service_account"])
+        # 혹시 모를 줄바꿈 깨짐 방지
+        if "private_key" in creds_info:
+            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+        creds = ServiceAccountCredentials.from_json_dict(creds_info, scope)
+    elif os.path.exists("google_keys.json"):
+        creds = ServiceAccountCredentials.from_json_keyfile_name("google_keys.json", scope)
+    else:
+        st.error("❌ 구글 인증 정보를 찾을 수 없습니다.")
+        st.stop()
+        
     return gspread.authorize(creds)
 
 def load_data_from_gsheet():
