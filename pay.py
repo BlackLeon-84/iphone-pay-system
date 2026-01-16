@@ -5,51 +5,42 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v2.4.2"
+SW_VERSION = "v2.4.3"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [초강력 2열 고정] 아이폰 전용 CSS ---
+# --- [스마트 레이아웃] 틀어짐 없는 2열 최적화 CSS ---
 st.markdown(f"""
     <style>
-    /* 기본 여백 및 폭 최적화 */
+    /* 1. 전체 여백 최적화 */
     .block-container {{
         padding-top: 3.5rem !important;
         max-width: 450px !important;
-        padding-left: 8px !important;
-        padding-right: 8px !important;
+        padding-left: 12px !important;
+        padding-right: 12px !important;
     }}
-    .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -5px; }}
+    .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
 
-    /* 지저분한 선 제거 및 입력창 스타일 */
+    /* 2. 불필요한 서식 제거 (태완님 요청) */
     hr {{ border: 0; height: 1px; background: #eee; margin: 15px 0; }}
     div[data-testid="stVerticalBlock"] > div {{ border: none !important; }}
     div[data-baseweb="base-input"] {{ border: none !important; background-color: #f1f3f5 !important; border-radius: 8px !important; }}
 
-    /* [핵심] 아이폰 2열 강제 고정 설정 */
-    div[data-testid="stHorizontalBlock"] {{
-        display: flex !important;
-        flex-direction: row !important; /* 가로 방향 고정 */
-        flex-wrap: nowrap !important;   /* 줄바꿈 절대 금지 */
-        gap: 6px !important;            /* 간격 최소화 */
-        width: 100% !important;
-    }}
-    div[data-testid="column"] {{
-        flex: 1 1 48% !important;       /* 화면의 약 절반 차지 */
-        min-width: 0px !important;       /* 최소 폭 제한 해제하여 압축 허용 */
+    /* 3. 스마트 2열 (강제 고정 대신 간격 조절로 유도) */
+    [data-testid="stHorizontalBlock"] {{
+        gap: 8px !important;
     }}
 
-    /* 입력창 및 레이블 폰트 최적화 */
+    /* 4. 텍스트 및 테이블 스타일 */
     input {{ font-size: 16px !important; }}
-    label p {{ font-size: 11px !important; font-weight: bold !important; color: #444 !important; white-space: nowrap !important; }}
-    
+    label p {{ font-size: 12px !important; font-weight: bold !important; color: #444 !important; }}
     .weekly-box {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px; }}
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
-    .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 1px; }}
+    .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     .calc-detail {{ font-size: 11px; color: #888; margin-top: -5px; margin-bottom: 10px; }}
-    .incen-log {{ font-size: 11px; color: #666; padding: 8px; background: #fcfcfc; border-radius: 5px; border-left: 3px solid #ddd; margin: 8px 0; }}
+    .incen-log {{ font-size: 11px; color: #666; padding: 8px; background: #fcfcfc; border-radius: 5px; border-left: 3px solid #ddd; margin: 10px 0; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -94,7 +85,7 @@ def save_to_gsheet(df_row):
 
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 세션 관리 ---
+# --- 세션 및 설정 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "config" not in st.session_state:
@@ -112,14 +103,15 @@ if not st.session_state.logged_in:
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     st.stop()
 
-# --- 사이드바 ---
+# --- 사이드바 (기능 복구) ---
 user_name = st.session_state.user_name
 cfg = st.session_state.config
 with st.sidebar:
     st.header("⚙️ 설정")
     if user_name == "태완":
         st.subheader("🛠️ 관리자 설정")
-        target_staff = st.selectbox("수정 대상 직원", STAFF_LIST) # 직원 선택
+        # [복구] 직원 이름 선택 메뉴
+        target_staff = st.selectbox("수정 대상 직원", STAFF_LIST)
         new_names = []; new_prices = []
         for i in range(7):
             c1, c2 = st.columns(2)
@@ -165,14 +157,14 @@ is_edit = not existing_row.empty
 
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
-    st.session_state.incen_history = [{"val": int(existing_row.iloc[0]["인센티브"]), "time": "기록"}] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
+    st.session_state.incen_history = [{"val": int(existing_row.iloc[0]["인센티브"]), "time": "기존"}] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
     st.session_state.last_date = str_date
 
 st.write(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
 if st.session_state.incen_history:
     st.markdown(f'<div class="incen-log">📋 상세: {" / ".join([f"{h['val']:,}" for h in st.session_state.incen_history])}</div>', unsafe_allow_html=True)
 
-add_amt = st.number_input("금액", min_value=0, step=1000, value=0)
+add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0)
 col1, col2, col3 = st.columns(3)
 if col1.button("➕추가", use_container_width=True):
     st.session_state.current_incen_sum += add_amt
@@ -184,20 +176,21 @@ if col2.button("↩️취소", use_container_width=True) and st.session_state.in
 if col3.button("🧹리셋", use_container_width=True):
     st.session_state.current_incen_sum = 0; st.session_state.incen_history = []; st.rerun()
 
-# 📦 품목 수량 (아이폰 강제 2열)
+# 📦 품목 수량 (2열 배치)
 st.divider()
 st.write("**📦 품목 수량**")
 counts = []
 for i in range(0, 6, 2):
     c1, c2 = st.columns(2)
     with c1:
-        val1 = int(existing_row.iloc[0][f'item{i+1}']) if is_edit else 0
-        counts.append(st.number_input(cfg["item_names"][i], 0, value=val1, key=f"it_{i}"))
+        v1 = int(existing_row.iloc[0][f'item{i+1}']) if is_edit else 0
+        counts.append(st.number_input(cfg["item_names"][i], 0, value=v1, key=f"it_{i}"))
     with c2:
-        val2 = int(existing_row.iloc[0][f'item{i+2}']) if is_edit else 0
-        counts.append(st.number_input(cfg["item_names"][i+1], 0, value=val2, key=f"it_{i+1}"))
-val7 = int(existing_row.iloc[0]['item7']) if is_edit else 0
-counts.append(st.number_input(cfg["item_names"][6], 0, value=val7, key="it_6"))
+        v2 = int(existing_row.iloc[0][f'item{i+2}']) if is_edit else 0
+        counts.append(st.number_input(cfg["item_names"][i+1], 0, value=v2, key=f"it_{i+1}"))
+# 마지막 항목
+v7 = int(existing_row.iloc[0]['item7']) if is_edit else 0
+counts.append(st.number_input(cfg["item_names"][6], 0, value=v7, key="it_6"))
 
 if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
     item_total = sum([int(c) * int(p) for c, p in zip(counts, cfg["item_prices"])])
@@ -205,9 +198,9 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
            "item1": counts[0], "item2": counts[1], "item3": counts[2], "item4": counts[3], 
            "item5": counts[4], "item6": counts[5], "item7": counts[6], 
            "합계": st.session_state.current_incen_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
-    if save_to_gsheet(row): st.success("저장 완료!"); st.rerun()
+    if save_to_gsheet(row): st.success("성공적으로 저장되었습니다."); st.rerun()
 
-# 📊 정산 리포트 (합계 포함)
+# 📊 정산 리포트 (합계 행 포함)
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day = cfg['start_day']
@@ -223,14 +216,15 @@ if not df_all.empty:
         st.markdown(f'<div class="calc-detail">(기본 {cfg["base_salary"]:,} + 추가 {total_extra:,} - 보험 {cfg["insurance"]:,})</div>', unsafe_allow_html=True)
         
         headers = ["날", "인센"] + [n[:1] for n in cfg["item_names"]] + ["합계"]
-        rows = ""; item_sums = [0]*7
+        rows_html = ""; item_sums = [0]*7
         for _, r in p_df.iterrows():
             d = datetime.strptime(r['날짜'], '%Y-%m-%d').day
-            if r['비고'] == "휴무": rows += f"<tr><td>{d}</td><td colspan='9' style='color:orange;'>🌴휴무</td></tr>"
+            if r['비고'] == "휴무": rows_html += f"<tr><td>{d}</td><td colspan='9' style='color:orange;'>🌴휴무</td></tr>"
             else:
-                row_items = "".join([f"<td>{int(r[f'item{i}'])}</td>" for i in range(1, 8)])
+                item_tds = "".join([f"<td>{int(r[f'item{i}'])}</td>" for i in range(1, 8)])
                 for i in range(1, 8): item_sums[i-1] += int(r[f'item{i}'])
-                rows += f"<tr><td>{d}</td><td>{int(r['인센티브']):,}</td>{row_items}<td style='color:blue;'>{int(r['합계']):,}</td></tr>"
+                rows_html += f"<tr><td>{d}</td><td>{int(r['인센티브']):,}</td>{item_tds}<td style='color:blue;'>{int(r['합계']):,}</td></tr>"
         
-        rows += f"<tr class='total-row'><td>합</td><td>{total_incen:,}</td>" + "".join([f"<td>{s}</td>" for s in item_sums]) + f"<td>{total_extra:,}</td></tr>"
-        st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{h}</th>" for h in headers])}</tr>{rows}</table>', unsafe_allow_html=True)
+        # 합계 행
+        rows_html += f"<tr class='total-row'><td>합</td><td>{total_incen:,}</td>" + "".join([f"<td>{s}</td>" for s in item_sums]) + f"<td>{total_extra:,}</td></tr>"
+        st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{h}</th>" for h in headers])}</tr>{rows_html}</table>', unsafe_allow_html=True)
