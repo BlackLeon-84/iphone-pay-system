@@ -6,10 +6,14 @@ from google.oauth2.service_account import Credentials
 import os
 
 # 소프트웨어 버전
-SW_VERSION = "v2.1.8"
+SW_VERSION = "v2.2.0"
 
-# 페이지 설정
-st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
+# 페이지 설정 (사이드바가 잘 보이도록 layout 설정을 기본값으로 두거나 조정합니다)
+st.set_page_config(
+    page_title=f"아이폰 정산 시스템 {SW_VERSION}",
+    layout="wide", # 사이드바 메뉴가 더 잘 보이도록 넓게 설정
+    initial_sidebar_state="expanded" # 사이드바를 처음부터 열어둠
+)
 
 # --- 설정 및 함수 정의 ---
 SHEET_NAME = "아이폰정산"
@@ -41,11 +45,10 @@ def load_data_from_gsheet():
         df = pd.DataFrame(data)
         for col in columns:
             if col not in df.columns:
-                df[col] = ""
-        for i in range(1, 8):
-            df[f'item{i}'] = pd.to_numeric(df[f'item{i}'], errors='coerce').fillna(0).astype(int)
-        df['인센티브'] = pd.to_numeric(df['인센티브'], errors='coerce').fillna(0).astype(int)
-        df['합계'] = pd.to_numeric(df['합계'], errors='coerce').fillna(0).astype(int)
+                df[col] = 0 if "item" in col or col in ["인센티브", "합계"] else ""
+        num_cols = ["인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계"]
+        for col in num_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
         return df
     except Exception:
         return pd.DataFrame(columns=columns)
@@ -89,12 +92,13 @@ if not st.session_state.logged_in:
             else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     st.stop()
 
-# --- 메인 데이터 로드 ---
+# --- 메인 설정 ---
 user_name = st.session_state.user_name
 my_config = {"base_salary": 3500000, "start_day": 13, "insurance": 104760}
 item_names = ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2']
 item_prices = [9000, 18000, 9000, 15000, 23000, 0, 0]
 
+# --- 디자인 및 CSS ---
 st.markdown("""
     <style>
     .weekly-container { display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #eee; }
@@ -105,26 +109,26 @@ st.markdown("""
     .report-table { width: 100%; font-size: 11px; text-align: center; border-collapse: collapse; background: white; }
     .report-table th, .report-table td { border: 1px solid #eee; padding: 8px 4px; }
     .total-row { background-color: #f8f9fa; font-weight: bold; }
-    .incen-log { font-size: 11px; color: #666; margin-bottom: 10px; padding: 5px; background: #fdfdfd; border-radius: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
-st.write(f"### 💼 {user_name}님 실적")
 df_all = load_data_from_gsheet()
+
+# --- 상단 타이틀 ---
+st.write(f"### 💼 {user_name}님 실적")
 
 # 날짜 선택
 t_c1, t_c2 = st.columns([1.2, 0.8])
-sel_date = t_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
+sel_date = t_c1.date_input("날짜 선택", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
-# 날짜 변경 감지 시 세션 초기화
 if "last_date" not in st.session_state: st.session_state.last_date = str_date
 if st.session_state.last_date != str_date:
-    st.session_state.current_incen_sum = None # 날짜 바뀌면 다시 불러오도록 설정
+    st.session_state.current_incen_sum = None
     st.session_state.incen_history = []
     st.session_state.last_date = str_date
 
-# 최근 7일 현황
+# 📅 7일 현황
 st.write("**📅 최근 7일 현황**")
 weekly_html = '<div class="weekly-container">'
 today_kst = get_now_kst().date()
@@ -138,11 +142,10 @@ for i in range(6, -1, -1):
 weekly_html += '</div>'
 st.markdown(weekly_html, unsafe_allow_html=True)
 
-# 해당 날짜 데이터 추출
+# 데이터 로드
 existing_row = df_all[(df_all["날짜"] == str_date) & (df_all["직원명"] == user_name)]
 is_edit = not existing_row.empty
 
-# 인센티브 세션값 설정 (수정 모드일 때 기존값 로드)
 if st.session_state.get("current_incen_sum") is None:
     if is_edit:
         st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"])
@@ -151,6 +154,7 @@ if st.session_state.get("current_incen_sum") is None:
         st.session_state.current_incen_sum = 0
         st.session_state.incen_history = []
 
+# 상태 표시
 if is_edit:
     reg_time = existing_row.iloc[0].get('입력시간', '정보없음')
     if existing_row.iloc[0]['비고'] == "휴무":
@@ -169,11 +173,7 @@ st.divider()
 
 # --- 인센티브 섹션 ---
 st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
-if st.session_state.incen_history:
-    log_text = " + ".join([f"{amt:,}" for amt in st.session_state.incen_history])
-    st.markdown(f'<div class="incen-log">📋 내역: {log_text}</div>', unsafe_allow_html=True)
-
-add_amt = st.number_input("금액 입력", min_value=0, step=1000, value=0, label_visibility="collapsed")
+add_amt = st.number_input("금액 입력", min_value=0, step=1000, value=0)
 b_c1, b_c2, b_c3 = st.columns(3)
 if b_c1.button("➕ 추가"): 
     st.session_state.current_incen_sum += add_amt
@@ -182,37 +182,28 @@ if b_c2.button("↩️ 취소") and st.session_state.incen_history:
     st.session_state.current_incen_sum -= st.session_state.incen_history.pop(); st.rerun()
 if b_c3.button("🧹 리셋"): 
     st.session_state.current_incen_sum = 0
-    st.session_state.incen_history = []
-    st.rerun()
+    st.session_state.incen_history = []; st.rerun()
 
-# --- 품목 수량 (수정 모드 시 값 불러오기 핵심 로직) ---
+# --- 품목 수량 ---
 st.write("**📦 품목 수량**")
 counts = []
 for i in range(1, 7, 2):
     c1, c2 = st.columns(2)
     for j, col in enumerate([c1, c2]):
         idx = i + j
-        # 저장된 데이터가 있으면 그 값을, 없으면 0을 표시
-        default_val = int(existing_row.iloc[0][f'item{idx}']) if is_edit else 0
-        counts.append(col.number_input(item_names[idx-1], 0, value=default_val, key=f"inp_{idx}"))
-
-default_val7 = int(existing_row.iloc[0]['item7']) if is_edit else 0
-counts.append(st.number_input(item_names[6], 0, value=default_val7, key="inp_7"))
+        def_val = int(existing_row.iloc[0][f'item{idx}']) if is_edit else 0
+        counts.append(col.number_input(item_names[idx-1], 0, value=def_val, key=f"inp_{idx}"))
+def_val7 = int(existing_row.iloc[0]['item7']) if is_edit else 0
+counts.append(st.number_input(item_names[6], 0, value=def_val7, key="inp_7"))
 
 if st.button("✅ 최종 실적 저장", type="primary", use_container_width=True):
     item_total = sum([int(c) * int(p) for c, p in zip(counts, item_prices)])
-    final_day_total = int(st.session_state.current_incen_sum) + item_total
-    now_ts = get_now_kst().strftime("%H:%M:%S")
+    final_total = st.session_state.current_incen_sum + item_total
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.current_incen_sum, 
            "item1": counts[0], "item2": counts[1], "item3": counts[2], "item4": counts[3], 
            "item5": counts[4], "item6": counts[5], "item7": counts[6], 
-           "합계": final_day_total, "비고": "정상", "입력시간": now_ts}
-    if save_to_gsheet(row): 
-        st.success("저장 완료!")
-        st.rerun()
-
-# --- 정산 리포트 (하단 생략, 기존과 동일) ---
-# ... (이전 코드의 리포트 부분 유지)
+           "합계": final_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
+    if save_to_gsheet(row): st.success("저장 완료!"); st.rerun()
 
 # --- 정산 리포트 ---
 st.divider()
@@ -230,14 +221,10 @@ else:
 p_df = df_all[(df_all["직원명"] == user_name) & (pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
 
 if not p_df.empty:
-    total_incen = p_df["인센티브"].sum()
     total_extra = p_df["합계"].sum()
-    total_items = [p_df[f"item{i}"].sum() for i in range(1, 8)]
     final_pay = int(my_config['base_salary'] + total_extra - my_config['insurance'])
-    
-    st.info(f"📅 정산기간: {start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')}")
-    st.markdown(f'<div>➕ 기본급: {my_config["base_salary"]:,}원<br>➕ 실적합계: {total_extra:,}원<br>➖ 보험료: {my_config["insurance"]:,}원</div>', unsafe_allow_html=True)
-    st.markdown(f"### **🏦 실수령 예상: {final_pay:,}원**")
+    st.info(f"📅 {start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')}")
+    st.markdown(f"### **🏦 예상: {final_pay:,}원**")
     
     headers = ["날짜", "인센"] + [n[:2] for n in item_names] + ["합계"]
     h_html = "".join([f"<th>{h}</th>" for h in headers])
@@ -246,12 +233,10 @@ if not p_df.empty:
         is_h = r['비고'] == "휴무"
         row_style = 'style="background-color: #fffde7;"' if is_h else ""
         rows_html += f"<tr {row_style}><td>{datetime.strptime(r['날짜'], '%Y-%m-%d').day}일</td>"
-        if is_h: rows_html += '<td colspan="9" style="text-align:center; color:#f57f17; font-weight:bold;">🌴 휴무</td>'
+        if is_h: rows_html += '<td colspan="9" style="color:#f57f17; font-weight:bold;">🌴 휴무</td>'
         else:
             rows_html += f"<td>{int(r['인센티브']):,}</td>"
             for i in range(1, 8): rows_html += f"<td>{int(r[f'item{i}'])}</td>"
             rows_html += f'<td style="font-weight:bold; color:blue;">{int(r["합계"]):,}</td>'
         rows_html += "</tr>"
-    
-    total_row_html = f'<tr class="total-row"><td>합계</td><td>{total_incen:,}</td>' + "".join([f"<td>{t}</td>" for t in total_items]) + f'<td style="color:blue;">{total_extra:,}</td></tr>'
-    st.markdown(f'<div style="overflow-x:auto;"><table class="report-table"><tr>{h_html}</tr>{rows_html}{total_row_html}</table></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="overflow-x:auto;"><table class="report-table"><tr>{h_html}</tr>{rows_html}</table></div>', unsafe_allow_html=True)
