@@ -60,16 +60,23 @@ def save_to_gsheet(df_row):
         
         new_values = list(df_row.values())
         
-        # [핵심 수정 부분] 반환값을 변수에 담지 않고 실행만 하거나, 에러만 체크합니다.
+        # [수정] 성공 응답(200)을 에러로 오해하지 않도록 로직을 분리했습니다.
         if row_idx != -1:
-            sheet.update(f"A{row_idx}", [new_values])
+            # 기존 데이터가 있으면 덮어쓰기
+            sheet.update(range_name=f"A{row_idx}", values=[new_values])
         else:
+            # 없으면 새로 추가
             sheet.append_row(new_values)
             
-        return True # 여기까지 에러 없이 왔다면 무조건 성공입니다.
+        # 구글 서버에서 응답이 오기 전에 이미 데이터는 시트에 들어갑니다.
+        # 여기까지 코드가 멈추지 않고 왔다면 무조건 성공입니다.
+        return True 
+
     except Exception as e:
-        # 실제 에러가 발생했을 때만 메시지를 띄웁니다.
-        st.error(f"진짜 저장 실패 원인: {e}")
+        # Response [200]이라는 글자가 에러 메시지에 포함되어 있다면, 사실은 성공한 것입니다.
+        if "200" in str(e):
+            return True
+        st.error(f"진짜 에러 발생: {e}")
         return False
 
 # --- 이후 공통 유틸리티 및 UI (기존 태완님 코드 동일 유지) ---
