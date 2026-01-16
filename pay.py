@@ -2,33 +2,47 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta, timezone
 import gspread
+from google.oauth2.service_account import Credentials
+import json
 import re
+import os
 
-# 소프트웨어 버전 (초간편 연동 버전)
-SW_VERSION = "v1.7.0"
+# 소프트웨어 버전
+SW_VERSION = "v1.7.5"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
 
-# --- 구글 시트 연동 (인증 키 없이 링크로 연동) ---
+# --- 구글 시트 연동 (가장 오류 없는 JSON 직접 방식) ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
-        # 인증 없이 시트 이름으로 바로 접근 (공유 설정이 '편집자'로 되어 있어야 함)
-        # 만약 이 방식이 막히면 '비밀키' 대신 시트 URL을 직접 쓰는 방식으로 자동 전환됩니다.
-        return gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-    except:
-        # 가장 최후의 수단: 예전 방식이 계속 에러나면 아래 에러 메시지를 띄웁니다.
-        st.error("⚠️ 시트 연결에 문제가 있습니다. 공유 설정을 확인해주세요.")
+        # Secrets에서 gcp_service_account 항목을 통째로 가져옴
+        if "gcp_service_account" in st.secrets:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            
+            # 여기서 private_key의 줄바꿈 문제를 원천 차단합니다.
+            if "private_key" in creds_dict:
+                # 역슬래시 n 문자를 실제 줄바꿈으로 변경
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+            return gspread.authorize(creds)
+        else:
+            st.error("❌ Secrets 설정이 비어있습니다.")
+            st.stop()
+    except Exception as e:
+        st.error(f"⚠️ 연결 오류 발생: {e}")
+        st.info("데이터 삭제 방지를 위해 구글 시트 연결이 필요합니다. 잠시 후 다시 시도해주세요.")
         st.stop()
 
-# --- 데이터 로드 및 저장 (태완님 기존 로직 유지) ---
+# --- 데이터 로드 및 저장 (디자인/내용 변경 금지 준수) ---
 def load_data_from_gsheet():
     try:
-        # 가장 단순한 방식: 시트 이름으로 열기
-        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-        sheet = gc.open(SHEET_NAME).sheet1
+        client = get_gsheet_client()
+        sheet = client.open(SHEET_NAME).sheet1
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         if not df.empty:
@@ -37,13 +51,13 @@ def load_data_from_gsheet():
             df['인센티브'] = pd.to_numeric(df['인센티브'], errors='coerce').fillna(0).astype(int)
             df['합계'] = pd.to_numeric(df['합계'], errors='coerce').fillna(0).astype(int)
         return df
-    except Exception as e:
+    except:
         return pd.DataFrame(columns=["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
 
 def save_to_gsheet(df_row):
     try:
-        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-        sheet = gc.open(SHEET_NAME).sheet1
+        client = get_gsheet_client()
+        sheet = client.open(SHEET_NAME).sheet1
         all_data = sheet.get_all_values()
         name, target_date = df_row['직원명'], df_row['날짜']
         row_idx = -1
@@ -58,10 +72,11 @@ def save_to_gsheet(df_row):
     except Exception as e:
         st.error(f"저장 실패: {e}"); return False
 
-# --- 이후 모든 디자인, 로그인, 정산 로직은 태완님의 이전 코드와 100% 동일 ---
-# (STAFF_LIST, UI 디자인, 합계 계산 등은 그대로 유지됩니다)
-
+# --- 공통 유틸리티 및 디자인 (기본 유지) ---
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
+
+# (이후 태완님의 기존 UI 코드, 로그인, 정산 로직을 그대로 아래에 붙여넣어 유지하세요)
+# [기존 v1.5.11에서 쓰셨던 STAFF_LIST부터 정산 리포트까지의 모든 코드를 그대로 사용합니다]
 
 # --- 로그인 세션 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
