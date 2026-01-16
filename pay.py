@@ -5,7 +5,7 @@ import sqlite3
 import re
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.3.6", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.3.7", layout="centered")
 
 # --- 유틸리티 함수 ---
 def format_comma(val):
@@ -36,12 +36,14 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
+    # 실적 테이블 (항목 7개 체계)
     c.execute('''CREATE TABLE IF NOT EXISTS salary
                  (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 
                   item1 INTEGER DEFAULT 0, item2 INTEGER DEFAULT 0, item3 INTEGER DEFAULT 0, 
                   item4 INTEGER DEFAULT 0, item5 INTEGER DEFAULT 0, item6 INTEGER DEFAULT 0, 
                   item7 INTEGER DEFAULT 0, 합계 INTEGER, 비고 TEXT, PRIMARY KEY(직원명, 날짜))''')
     
+    # 부족한 컬럼 자동 추가 (item7 등)
     cursor = c.execute("PRAGMA table_info(salary)")
     cols = [row[1] for row in cursor.fetchall()]
     for i in range(1, 8):
@@ -49,6 +51,10 @@ def init_db():
             try:
                 c.execute(f"ALTER TABLE salary ADD COLUMN item{i} INTEGER DEFAULT 0")
             except: pass
+    
+    if '합계' not in cols:
+        try: c.execute("ALTER TABLE salary ADD COLUMN 합계 INTEGER DEFAULT 0")
+        except: pass
 
     c.execute('''CREATE TABLE IF NOT EXISTS settings_v3
                  (직원명 TEXT, id TEXT, display_name TEXT, price INTEGER, PRIMARY KEY(직원명, id))''')
@@ -59,7 +65,7 @@ def init_db():
 
 init_db()
 
-# --- 데이터 로드 함수 ---
+# --- 데이터 로드 및 로그인 로직 (이전 버전과 동일) ---
 def load_user_settings(name):
     conn = get_connection()
     df = pd.read_sql("SELECT * FROM settings_v3 WHERE 직원명 = ?", conn, params=(name,))
@@ -80,7 +86,6 @@ def load_staff_config(name):
     if df.empty: return {"base_salary": 3500000, "start_day": 13, "insurance": 104760}
     return {"base_salary": df.iloc[0]['base_salary'], "start_day": df.iloc[0]['start_day'], "insurance": df.iloc[0]['insurance']}
 
-# --- 로그인 세션 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -98,7 +103,7 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 사이드바 (설정창 분리 유지) ---
+# --- 사이드바 설정창 ---
 with st.sidebar:
     st.header("⚙️ 시스템 관리")
     if user_name == "태완":
@@ -129,10 +134,9 @@ with st.sidebar:
                 conn = get_connection(); c = conn.cursor()
                 c.execute("INSERT OR REPLACE INTO staff_configs VALUES (?, ?, ?, ?)", (target_staff, parse_int(bv), sd, parse_int(iv)))
                 conn.commit(); conn.close(); add_log(f"✅ {target_staff} 급여 저장"); st.rerun()
-
     if st.button("로그아웃"): st.session_state.logged_in = False; st.rerun()
 
-# --- 데이터 로드 및 전처리 (수정 포인트!) ---
+# --- 데이터 로드 및 안전한 전처리 ---
 curr_sets = load_user_settings(user_name)
 item_names = curr_sets['display_name'].tolist()
 item_prices = curr_sets['price'].tolist()
@@ -142,19 +146,15 @@ conn = get_connection()
 df_all = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", conn, params=(user_name,))
 conn.close()
 
-# 에러 해결 핵심 로직: errors='coerce' 추가
+# NaN 및 문자 데이터 방어 로직
 for i in range(1, 8):
     col = f'item{i}'
-    if col not in df_all.columns:
-        df_all[col] = 0
-    # pd.to_numeric에 errors='coerce'를 주어 문자가 있어도 에러 대신 NaN으로 변환하게 함
+    if col not in df_all.columns: df_all[col] = 0
     df_all[col] = pd.to_numeric(df_all[col], errors='coerce').fillna(0).astype(int)
-
-# 인센티브 컬럼도 동일하게 처리하여 안전성 확보
 if '인센티브' in df_all.columns:
     df_all['인센티브'] = pd.to_numeric(df_all['인센티브'], errors='coerce').fillna(0).astype(int)
 
-# --- CSS (모바일 2열) ---
+# --- CSS ---
 st.markdown("""
     <style>
     [data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 8px !important; }
@@ -176,12 +176,13 @@ is_edit = not existing_row.empty
 
 if t_c2.button("🌴 휴무"):
     conn = get_connection(); c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO salary VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?)", (user_name, str_date, "휴무"))
+    # 안전하게 컬럼 지정 저장
+    c.execute("INSERT OR REPLACE INTO salary (직원명, 날짜, 인센티브, item1, item2, item3, item4, item5, item6, item7, 합계, 비고) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?)", (user_name, str_date, "휴무"))
     conn.commit(); conn.close(); st.rerun()
 
 st.divider()
 
-# 인센티브
+# 인센티브 합계 섹션
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [st.session_state.current_incen_sum] if is_edit and st.session_state.current_incen_sum > 0 else []
@@ -194,7 +195,7 @@ if bc1.button("➕ 추가"): st.session_state.current_incen_sum += add_amt; st.s
 if bc2.button("↩️ 취소") and st.session_state.incen_history: st.session_state.current_incen_sum -= st.session_state.incen_history.pop(); st.rerun()
 if bc3.button("🧹 리셋"): st.session_state.current_incen_sum = 0; st.session_state.incen_history = []; st.rerun()
 
-# 수량 입력
+# 수량 입력 (2열)
 st.write("**📦 품목 수량**")
 counts = []
 for i in range(1, 7, 2):
@@ -209,11 +210,14 @@ counts.append(st.number_input(item_names[6], 0, value=int(val7), key="inp_7"))
 if st.button("✅ 최종 실적 저장", type="primary"):
     total = st.session_state.current_incen_sum + sum([c*p for c, p in zip(counts, item_prices)])
     conn = get_connection(); c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO salary VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-              (user_name, str_date, st.session_state.current_incen_sum, *counts, total, "정상"))
+    # ⭐ 핵심 수정: VALUES 앞에 컬럼명을 명시하여 개수 충돌 방지
+    sql = """INSERT OR REPLACE INTO salary 
+             (직원명, 날짜, 인센티브, item1, item2, item3, item4, item5, item6, item7, 합계, 비고) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+    c.execute(sql, (user_name, str_date, st.session_state.current_incen_sum, *counts, total, "정상"))
     conn.commit(); conn.close(); st.success("저장 완료!"); st.rerun()
 
-# 📊 정산 리포트
+# --- 정산 리포트 ---
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day = my_config['start_day']
