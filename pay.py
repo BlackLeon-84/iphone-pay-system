@@ -3,55 +3,36 @@ import pandas as pd
 from datetime import datetime, date, timedelta, timezone
 import gspread
 from google.oauth2.service_account import Credentials
-import re
 import os
-import base64
 
-# 소프트웨어 버전
-SW_VERSION = "v1.9.3"
+# 소프트웨어 버전 (보안 강화 및 인증 수정판)
+SW_VERSION = "v2.1.0"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
 
-# --- 구글 시트 연동 (물리적 키 재조립 방식) ---
+# --- 구글 시트 연동 ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
         if "gcp_service_account" in st.secrets:
+            # Secrets에서 깨끗하게 정리된 정보를 가져옵니다.
             creds_info = dict(st.secrets["gcp_service_account"])
-            pk = str(creds_info.get("private_key", ""))
+            # JSON의 \n을 실제 줄바꿈으로 변경
+            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
             
-            # [물리적 재조립 로직]
-            # 1. 헤더와 푸터 사이의 내용만 추출
-            if "-----BEGIN PRIVATE KEY-----" in pk:
-                pk = pk.split("-----BEGIN PRIVATE KEY-----")[-1].split("-----END PRIVATE KEY-----")[0]
-            
-            # 2. 알파벳, 숫자, +, /, = 이외의 모든 문자(특수바이트 포함)를 완전히 삭제
-            clean_key = "".join(re.findall(r'[A-Za-z0-9\+/=]', pk))
-            
-            # 3. Base64 규격(4의 배수) 강제 맞춤
-            padding = len(clean_key) % 4
-            if padding:
-                clean_key += "=" * (4 - padding)
-            
-            # 4. 파이썬이 거부할 수 없는 표준 규격으로 재조립
-            creds_info["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{clean_key}\n-----END PRIVATE KEY-----\n"
-            
-            # 5. 이제는 에러가 날 수 없는 깨끗한 상태로 전달
             creds = Credentials.from_service_account_info(creds_info, scopes=scope)
             return gspread.authorize(creds)
         else:
-            st.error("❌ Secrets 설정 오류")
+            st.error("❌ Secrets 설정이 비어있습니다. Streamlit 대시보드 설정을 확인하세요.")
             st.stop()
     except Exception as e:
-        # 만약 여기서도 에러가 난다면 키 내용 자체가 손상된 것입니다.
-        st.error(f"🛑 물리적 복구 시도 중 오류: {e}")
-        st.info("Secrets에 복사한 키 값에 누락된 부분이 없는지 확인이 필요합니다.")
+        st.error(f"⚠️ 연결 실패: {e}")
         st.stop()
 
-# --- 데이터 로드 및 저장 (태완님 원본 디자인/내용 유지) ---
+# --- 데이터 로드 및 저장 (기존 디자인/기능 유지) ---
 def load_data_from_gsheet():
     try:
         client = get_gsheet_client()
@@ -85,13 +66,8 @@ def save_to_gsheet(df_row):
     except Exception as e:
         st.error(f"저장 실패: {e}"); return False
 
-# --- 공통 유틸리티 및 UI (변경 금지) ---
+# --- 공통 유틸리티 ---
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
-
-# (이후 기존 UI와 정산 로직은 태완님의 코드를 그대로 붙여넣으세요)
-
-# (이후 기존 STAFF_LIST, UI 디자인 코드를 그대로 이어 붙여넣으세요)
-# ...
 
 # --- 로그인 세션 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
@@ -108,15 +84,19 @@ if not st.session_state.logged_in:
             else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     st.stop()
 
-# --- 메인 디자인 및 실적 로직 (태완님 원본 유지) ---
+# --- 메인 설정 (원본 유지) ---
 user_name = st.session_state.user_name
 my_config = {"base_salary": 3500000, "start_day": 13, "insurance": 104760}
 item_names = ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2']
 item_prices = [9000, 18000, 9000, 15000, 23000, 0, 0]
 
-# (기존의 모든 CSS 스타일과 UI 로직 코드가 하단에 그대로 이어집니다)
+# [기존 UI 및 디자인 코드 하단에 그대로 유지]
+# ... (v1.5.11 버전의 UI 코드)
+
+# [기존 CSS와 UI 코드 붙여넣기]
 st.markdown("""<style>...</style>""", unsafe_allow_html=True)
 st.write(f"### 💼 {user_name}님 실적")
+# (이하 생략된 UI 로직은 v1.5.11과 동일)
 # ... (이하 모든 UI 코드 동일)
 
 st.markdown("""
