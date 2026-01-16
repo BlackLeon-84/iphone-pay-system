@@ -5,7 +5,7 @@ import sqlite3
 import re
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.3.5", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.3.6", layout="centered")
 
 # --- 유틸리티 함수 ---
 def format_comma(val):
@@ -36,14 +36,12 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    # 1. 실적 테이블
     c.execute('''CREATE TABLE IF NOT EXISTS salary
                  (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 
                   item1 INTEGER DEFAULT 0, item2 INTEGER DEFAULT 0, item3 INTEGER DEFAULT 0, 
                   item4 INTEGER DEFAULT 0, item5 INTEGER DEFAULT 0, item6 INTEGER DEFAULT 0, 
                   item7 INTEGER DEFAULT 0, 합계 INTEGER, 비고 TEXT, PRIMARY KEY(직원명, 날짜))''')
     
-    # DB 컬럼 누락 체크 및 자동 추가
     cursor = c.execute("PRAGMA table_info(salary)")
     cols = [row[1] for row in cursor.fetchall()]
     for i in range(1, 8):
@@ -100,7 +98,7 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 사이드바 (설정창 분리) ---
+# --- 사이드바 (설정창 분리 유지) ---
 with st.sidebar:
     st.header("⚙️ 시스템 관리")
     if user_name == "태완":
@@ -134,7 +132,7 @@ with st.sidebar:
 
     if st.button("로그아웃"): st.session_state.logged_in = False; st.rerun()
 
-# --- 데이터 로드 및 전처리 (ValueError 방지 핵심) ---
+# --- 데이터 로드 및 전처리 (수정 포인트!) ---
 curr_sets = load_user_settings(user_name)
 item_names = curr_sets['display_name'].tolist()
 item_prices = curr_sets['price'].tolist()
@@ -144,12 +142,17 @@ conn = get_connection()
 df_all = pd.read_sql("SELECT * FROM salary WHERE 직원명 = ?", conn, params=(user_name,))
 conn.close()
 
-# 에러 방지용 데이터 전처리: 모든 item 컬럼 확보 및 NaN 제거
+# 에러 해결 핵심 로직: errors='coerce' 추가
 for i in range(1, 8):
     col = f'item{i}'
     if col not in df_all.columns:
         df_all[col] = 0
-    df_all[col] = pd.to_numeric(df_all[col]).fillna(0).astype(int)
+    # pd.to_numeric에 errors='coerce'를 주어 문자가 있어도 에러 대신 NaN으로 변환하게 함
+    df_all[col] = pd.to_numeric(df_all[col], errors='coerce').fillna(0).astype(int)
+
+# 인센티브 컬럼도 동일하게 처리하여 안전성 확보
+if '인센티브' in df_all.columns:
+    df_all['인센티브'] = pd.to_numeric(df_all['인센티브'], errors='coerce').fillna(0).astype(int)
 
 # --- CSS (모바일 2열) ---
 st.markdown("""
@@ -191,7 +194,7 @@ if bc1.button("➕ 추가"): st.session_state.current_incen_sum += add_amt; st.s
 if bc2.button("↩️ 취소") and st.session_state.incen_history: st.session_state.current_incen_sum -= st.session_state.incen_history.pop(); st.rerun()
 if bc3.button("🧹 리셋"): st.session_state.current_incen_sum = 0; st.session_state.incen_history = []; st.rerun()
 
-# 수량 입력 (이미 전처리되어 있어 iloc[0][col] 접근이 안전함)
+# 수량 입력
 st.write("**📦 품목 수량**")
 counts = []
 for i in range(1, 7, 2):
