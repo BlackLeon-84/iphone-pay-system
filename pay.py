@@ -1,13 +1,19 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 import sqlite3
 import re
 
-# 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.4.1", layout="centered")
+# [추가] 소프트웨어 버전 정의
+SW_VERSION = "v1.4.3"
 
-# --- 유틸리티 함수 ---
+# 페이지 설정
+st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
+
+# --- 한국 시간(KST) 유틸리티 ---
+def get_now_kst():
+    return datetime.now(timezone.utc) + timedelta(hours=9)
+
 def format_comma(val):
     try:
         return "{:,}".format(int(str(val).replace(",", "")))
@@ -20,11 +26,12 @@ def parse_int(val):
     except:
         return 0
 
+# 관리자 설정 로그 세션 초기화
 if "admin_logs" not in st.session_state:
     st.session_state.admin_logs = []
 
 def add_log(msg):
-    now = datetime.now().strftime("%H:%M:%S")
+    now = get_now_kst().strftime("%H:%M:%S")
     st.session_state.admin_logs.insert(0, f"[{now}] {msg}")
     if len(st.session_state.admin_logs) > 5:
         st.session_state.admin_logs.pop()
@@ -98,11 +105,15 @@ user_name = st.session_state.user_name
 
 # --- 사이드바 ---
 with st.sidebar:
+    # [수정] 사이드바 상단 버전 표시
+    st.caption(f"System Version: {SW_VERSION}")
     st.header("⚙️ 시스템 관리")
+    
     if user_name == "태완":
         target_staff = st.selectbox("👤 설정 직원", STAFF_LIST)
         u_sets = load_user_settings(target_staff)
         u_conf = load_staff_config(target_staff)
+        
         with st.expander("📦 품목 설정", expanded=True):
             with st.form(f"items_{target_staff}"):
                 new_it = []
@@ -114,7 +125,10 @@ with st.sidebar:
                 if st.form_submit_button("품목 저장"):
                     conn = get_connection(); c = conn.cursor()
                     c.executemany("UPDATE settings_v3 SET display_name=?, price=? WHERE 직원명=? AND id=?", new_it)
-                    conn.commit(); conn.close(); add_log(f"✅ {target_staff} 품목 저장"); st.rerun()
+                    conn.commit(); conn.close()
+                    add_log(f"✅ {target_staff} 품목 변경 완료") # 로그 추가
+                    st.rerun()
+                    
         with st.expander("💰 급여 설정"):
             with st.form(f"sal_{target_staff}"):
                 bv = st.text_input("기본급", format_comma(u_conf['base_salary']))
@@ -123,10 +137,20 @@ with st.sidebar:
                 if st.form_submit_button("급여 저장"):
                     conn = get_connection(); c = conn.cursor()
                     c.execute("INSERT OR REPLACE INTO staff_configs VALUES (?, ?, ?, ?)", (target_staff, parse_int(bv), sd, parse_int(iv)))
-                    conn.commit(); conn.close(); add_log(f"✅ {target_staff} 급여 저장"); st.rerun()
+                    conn.commit(); conn.close()
+                    add_log(f"✅ {target_staff} 급여 설정 변경") # 로그 추가
+                    st.rerun()
+        
+        # [복구] 사이드바 하단 저장 로그 표시
+        if st.session_state.admin_logs:
+            st.divider()
+            st.subheader("📝 설정 변경 기록")
+            for log in st.session_state.admin_logs:
+                st.caption(log)
+
     if st.button("로그아웃"): st.session_state.logged_in = False; st.rerun()
 
-# --- 데이터 전처리 ---
+# --- 메인 영역 디자인 및 기능 유지 ---
 curr_sets = load_user_settings(user_name)
 item_names = curr_sets['display_name'].tolist()
 item_prices = curr_sets['price'].tolist()
@@ -143,70 +167,54 @@ for i in range(1, 8):
 df_all['인센티브'] = pd.to_numeric(df_all['인센티브'], errors='coerce').fillna(0).astype(int)
 df_all['합계'] = pd.to_numeric(df_all['합계'], errors='coerce').fillna(0).astype(int)
 
-# --- CSS (UI 최적화) ---
+# CSS
 st.markdown("""
     <style>
-    /* 전체 레이아웃 */
     [data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; }
     [data-testid="stHorizontalBlock"] > div { flex: 1 1 0 !important; min-width: 0 !important; }
-    
-    /* 버튼 공통 스타일 */
     .stButton>button { width: 100%; font-weight: bold; border-radius: 8px; padding: 0.5rem; }
-    
-    /* 7일 등록 현황 스타일 */
-    .weekly-container {
-        display: flex; justify-content: space-around; background: #ffffff;
-        border: 1px solid #e0e0e0; border-radius: 12px; padding: 10px 5px;
-        margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    }
+    .weekly-container { display: flex; justify-content: space-around; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 10px 5px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     .weekly-item { text-align: center; flex: 1; border-right: 1px solid #f0f0f0; }
     .weekly-item:last-child { border-right: none; }
     .weekly-date { font-size: 11px; color: #666; margin-bottom: 4px; }
     .weekly-icon { font-size: 16px; }
-
-    /* 상태 박스 */
     .status-box { padding: 12px; border-radius: 10px; margin-bottom: 15px; text-align: center; font-weight: bold; border: 1px solid #ddd; }
-    
-    /* 인센 로그 */
     .incen-log { font-size: 13px; background: #f0f7ff; padding: 8px 12px; border-radius: 8px; border-left: 4px solid #007bff; margin: 10px 0; color: #0056b3; }
-    
-    /* 리포트 테이블 */
     .report-table { width: 100%; font-size: 11px; text-align: center; border-collapse: collapse; background: white; }
     .report-table th, .report-table td { border: 1px solid #eee; padding: 8px 4px; white-space: nowrap; }
     .report-table th { background-color: #f8f9fa; color: #333; }
     </style>
     """, unsafe_allow_html=True)
 
-# 1. 실적 입력
+# [수정] 메인 상단 소프트웨어 버전 표시
+st.caption(f"Software Version: {SW_VERSION}")
 st.write(f"### 💼 {user_name}님 실적")
+
+# --- 이하 기능 및 디자인 기존과 동일하게 유지 ---
 t_c1, t_c2 = st.columns([1.2, 0.8])
 sel_date = t_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
-# 🔄 날짜 변경 시 초기화
 if "last_date" not in st.session_state: st.session_state.last_date = str_date
 if st.session_state.last_date != str_date:
     st.session_state.current_incen_sum = 0
     st.session_state.incen_history = []
     st.session_state.last_date = str_date
 
-# 📅 [수정] 7일 등록 현황 디자인 (가로 1열)
 st.write("**📅 최근 7일 현황**")
 weekly_html = '<div class="weekly-container">'
-today = date.today()
+today = get_now_kst().date()
 for i in range(6, -1, -1):
     target_d = today - timedelta(days=i)
     target_str = target_d.strftime("%Y-%m-%d")
     day_data = df_all[df_all["날짜"] == target_str]
+    icon = "⚪"
     if not day_data.empty:
         icon = "🌴" if day_data.iloc[0]['비고'] == "휴무" else "✅"
-    else: icon = "⚪"
-    # 날짜 포맷 수정: "10일"
     weekly_html += f'<div class="weekly-item"><div class="weekly-date">{target_d.day}일</div><div class="weekly-icon">{icon}</div></div>'
 weekly_html += '</div>'
 st.markdown(weekly_html, unsafe_allow_html=True)
 
-# 🟢 상단 상태 표시
 existing_row = df_all[df_all["날짜"] == str_date]
 is_edit = not existing_row.empty
 
@@ -222,13 +230,12 @@ else:
 
 if t_c2.button("🌴 휴무 등록"):
     conn = get_connection(); c = conn.cursor()
-    now_ts = datetime.now().strftime("%H:%M:%S")
+    now_ts = get_now_kst().strftime("%H:%M:%S")
     c.execute("INSERT OR REPLACE INTO salary (직원명, 날짜, 인센티브, item1, item2, item3, item4, item5, item6, item7, 합계, 비고, 입력시간) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?)", (user_name, str_date, "휴무", now_ts))
     conn.commit(); conn.close(); st.rerun()
 
 st.divider()
 
-# 💰 인센티브 섹션
 if "current_incen_sum" not in st.session_state:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
@@ -244,7 +251,6 @@ if st.session_state.incen_history:
 
 add_amt = st.number_input("금액 입력", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
-# 🔘 [수정] 추가, 취소, 리셋 버튼 가로 1열 정렬
 b_c1, b_c2, b_c3 = st.columns(3)
 if b_c1.button("➕ 추가"): 
     st.session_state.current_incen_sum += add_amt
@@ -254,7 +260,6 @@ if b_c2.button("↩️ 취소") and st.session_state.incen_history:
 if b_c3.button("🧹 리셋"): 
     st.session_state.current_incen_sum = 0; st.session_state.incen_history = []; st.rerun()
 
-# 📦 품목 수량 (2열)
 st.write("**📦 품목 수량**")
 counts = []
 for i in range(1, 7, 2):
@@ -269,13 +274,12 @@ counts.append(st.number_input(item_names[6], 0, value=int(val7), key=f"inp_7_{st
 if st.button("✅ 최종 실적 저장", type="primary"):
     item_total = sum([int(c) * int(p) for c, p in zip(counts, item_prices)])
     final_day_total = int(st.session_state.current_incen_sum) + item_total
-    now_ts = datetime.now().strftime("%H:%M:%S")
+    now_ts = get_now_kst().strftime("%H:%M:%S")
     conn = get_connection(); c = conn.cursor()
     sql = "INSERT OR REPLACE INTO salary (직원명, 날짜, 인센티브, item1, item2, item3, item4, item5, item6, item7, 합계, 비고, 입력시간) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     c.execute(sql, (user_name, str_date, st.session_state.current_incen_sum, *counts, final_day_total, "정상", now_ts))
     conn.commit(); conn.close(); st.success("저장 완료!"); st.rerun()
 
-# 📊 정산 리포트
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day = my_config['start_day']
