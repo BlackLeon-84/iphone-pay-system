@@ -5,9 +5,9 @@ import sqlite3
 import re
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.2.4", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.2.5", layout="centered")
 
-# --- 유틸리티: 숫자에 콤마 넣기/빼기 ---
+# --- 유틸리티 함수 ---
 def format_comma(val):
     try:
         return "{:,}".format(int(str(val).replace(",", "")))
@@ -19,6 +19,17 @@ def parse_int(val):
         return int(re.sub(r'[^0-9]', '', str(val)))
     except:
         return 0
+
+# --- 로그 기록 관리 ---
+if "admin_logs" not in st.session_state:
+    st.session_state.admin_logs = []
+
+def add_log(msg):
+    now = datetime.now().strftime("%H:%M:%S")
+    st.session_state.admin_logs.insert(0, f"[{now}] {msg}")
+    # 로그는 최신 5개까지만 유지
+    if len(st.session_state.admin_logs) > 5:
+        st.session_state.admin_logs.pop()
 
 # --- 데이터베이스 및 기본 설정 ---
 def get_connection():
@@ -87,7 +98,7 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 사이드바 (관리자 통합 제어) ---
+# --- 사이드바 (관리자 통합 제어 및 로그) ---
 with st.sidebar:
     st.header("⚙️ 시스템 관리")
     if user_name == "태완":
@@ -99,20 +110,18 @@ with st.sidebar:
         new_items = []
         
         with st.form(f"admin_form_{target_staff}"):
-            st.subheader(f"📦 {target_staff} 품목 및 단가")
+            st.subheader(f"📦 {target_staff} 설정")
             for i, row in user_settings.iterrows():
                 n_name = st.text_input(f"품목{i+1} 이름", value=row['display_name'], key=f"it_n_{target_staff}_{row['id']}")
-                # 콤마 처리를 위해 text_input 사용
                 p_val = st.text_input(f"{n_name} 단가", value=format_comma(row['price']), key=f"it_p_{target_staff}_{row['id']}")
                 new_items.append((n_name, parse_int(p_val), target_staff, row['id']))
             
             st.divider()
-            st.subheader(f"💰 {target_staff} 급여 환경")
             b_val = st.text_input("기본급", value=format_comma(config['base_salary']))
             i_val = st.text_input("보험료(공제액)", value=format_comma(config['insurance']))
             new_start = st.number_input("정산 시작일", value=int(config['start_day']), min_value=1, max_value=28)
             
-            if st.form_submit_button(f"{target_staff} 설정 전체 저장"):
+            if st.form_submit_button(f"{target_staff} 설정 저장"):
                 conn = get_connection()
                 c = conn.cursor()
                 c.executemany("UPDATE settings_v3 SET display_name=?, price=? WHERE 직원명=? AND id=?", new_items)
@@ -120,8 +129,15 @@ with st.sidebar:
                           (target_staff, parse_int(b_val), new_start, parse_int(i_val)))
                 conn.commit()
                 conn.close()
-                st.success(f"설정 저장 완료!")
+                add_log(f"✅ {target_staff} 설정 저장 성공")
                 st.rerun()
+
+        # 로그창 영역
+        if st.session_state.admin_logs:
+            st.markdown("---")
+            st.caption("🕒 **관리 로그 (최근 5건)**")
+            for log in st.session_state.admin_logs:
+                st.code(log, language="text")
     else:
         st.info("✅ 로그인 중: " + user_name)
     
@@ -147,7 +163,7 @@ st.markdown("""
     .report-table th { background-color: #f8f9fa; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
-st.markdown('<p class="version-text">v1.2.4-stable</p>', unsafe_allow_html=True)
+st.markdown('<p class="version-text">v1.2.5-stable</p>', unsafe_allow_html=True)
 
 # 1. 상단 실적 입력
 st.write(f"### 💼 {user_name}님 실적")
