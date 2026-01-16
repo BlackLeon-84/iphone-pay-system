@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 import os
 
 # 소프트웨어 버전
-SW_VERSION = "v2.1.3"
+SW_VERSION = "v2.1.7"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
@@ -31,32 +31,23 @@ def get_gsheet_client():
         st.stop()
 
 def load_data_from_gsheet():
-    # 기본 틀 정의 (에러 방지용)
     columns = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"]
     try:
         client = get_gsheet_client()
         sheet = client.open(SHEET_NAME).sheet1
         data = sheet.get_all_records()
-        
         if not data:
             return pd.DataFrame(columns=columns)
-            
         df = pd.DataFrame(data)
-        
-        # 만약 시트에 특정 열이 없으면 강제로 빈 열을 만들어 줍니다 (KeyError 방지)
         for col in columns:
             if col not in df.columns:
                 df[col] = ""
-        
-        # 숫자 데이터 변환 로직 (기존 유지)
         for i in range(1, 8):
             df[f'item{i}'] = pd.to_numeric(df[f'item{i}'], errors='coerce').fillna(0).astype(int)
         df['인센티브'] = pd.to_numeric(df['인센티브'], errors='coerce').fillna(0).astype(int)
         df['합계'] = pd.to_numeric(df['합계'], errors='coerce').fillna(0).astype(int)
-        
         return df
-    except Exception as e:
-        # 아예 연결이 안 되거나 파일이 없을 때
+    except Exception:
         return pd.DataFrame(columns=columns)
 
 def save_to_gsheet(df_row):
@@ -65,37 +56,25 @@ def save_to_gsheet(df_row):
         sheet = client.open(SHEET_NAME).sheet1
         all_data = sheet.get_all_values()
         name, target_date = df_row['직원명'], df_row['날짜']
-        
         row_idx = -1
         for i, row in enumerate(all_data):
             if len(row) > 1 and row[0] == name and row[1] == target_date:
                 row_idx = i + 1
                 break
-        
         new_values = list(df_row.values())
-        
-        # [수정] 성공 응답(200)을 에러로 오해하지 않도록 로직을 분리했습니다.
         if row_idx != -1:
-            # 기존 데이터가 있으면 덮어쓰기
             sheet.update(range_name=f"A{row_idx}", values=[new_values])
         else:
-            # 없으면 새로 추가
             sheet.append_row(new_values)
-            
-        # 구글 서버에서 응답이 오기 전에 이미 데이터는 시트에 들어갑니다.
-        # 여기까지 코드가 멈추지 않고 왔다면 무조건 성공입니다.
         return True 
-
     except Exception as e:
-        # Response [200]이라는 글자가 에러 메시지에 포함되어 있다면, 사실은 성공한 것입니다.
-        if "200" in str(e):
-            return True
-        st.error(f"진짜 에러 발생: {e}")
+        if "200" in str(e): return True
+        st.error(f"저장 에러: {e}")
         return False
 
-# --- 이후 공통 유틸리티 및 UI (기존 태완님 코드 동일 유지) ---
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
+# --- 로그인 세션 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False; st.session_state.user_name = ""
@@ -110,39 +89,30 @@ if not st.session_state.logged_in:
             else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     st.stop()
 
-# --- 정산 로직 및 UI 코드 시작 ---
-# ... (태완님의 기존 코드를 이어서 붙여넣으세요)
-
-# --- 메인 설정 (원본 유지) ---
+# --- 메인 UI 설정 ---
 user_name = st.session_state.user_name
 my_config = {"base_salary": 3500000, "start_day": 13, "insurance": 104760}
 item_names = ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2']
 item_prices = [9000, 18000, 9000, 15000, 23000, 0, 0]
 
-# [기존 UI 및 디자인 코드 하단에 그대로 유지]
-# ... (v1.5.11 버전의 UI 코드)
-
-# [기존 CSS와 UI 코드 붙여넣기]
-st.markdown("""<style>...</style>""", unsafe_allow_html=True)
-st.write(f"### 💼 {user_name}님 실적")
-# (이하 생략된 UI 로직은 v1.5.11과 동일)
-# ... (이하 모든 UI 코드 동일)
-
+# --- CSS 디자인 ---
 st.markdown("""
     <style>
-    [data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; }
-    [data-testid="stHorizontalBlock"] > div { flex: 1 1 0 !important; min-width: 0 !important; }
-    .stButton>button { width: 100%; font-weight: bold; border-radius: 8px; padding: 0.5rem; }
+    .weekly-container { display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #eee; }
+    .weekly-item { text-align: center; flex: 1; }
+    .weekly-date { font-size: 10px; color: #666; margin-bottom: 5px; }
+    .weekly-icon { font-size: 18px; }
+    [data-testid="stHorizontalBlock"] { gap: 4px !important; }
     .status-box { padding: 12px; border-radius: 10px; margin-bottom: 15px; text-align: center; font-weight: bold; border: 1px solid #ddd; }
     .report-table { width: 100%; font-size: 11px; text-align: center; border-collapse: collapse; background: white; }
     .report-table th, .report-table td { border: 1px solid #eee; padding: 8px 4px; }
+    .total-row { background-color: #f8f9fa; font-weight: bold; }
+    .incen-log { font-size: 11px; color: #666; margin-bottom: 10px; padding: 5px; background: #fdfdfd; border-radius: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
 st.write(f"### 💼 {user_name}님 실적")
 df_all = load_data_from_gsheet()
-
-# (태완님이 작성하셨던 나머지 UI 코드를 이어서 붙여넣으시면 됩니다)
 
 # 날짜 선택
 t_c1, t_c2 = st.columns([1.2, 0.8])
@@ -155,7 +125,7 @@ if st.session_state.last_date != str_date:
     st.session_state.incen_history = []
     st.session_state.last_date = str_date
 
-# 📅 7일 현황
+# 📅 7일 현황 (가로 배치 수정 완료)
 st.write("**📅 최근 7일 현황**")
 weekly_html = '<div class="weekly-container">'
 today_kst = get_now_kst().date()
@@ -181,7 +151,7 @@ if is_edit:
 else:
     st.markdown(f'<div class="status-box" style="background-color: #fafafa; color: #616161;">📝 실적을 입력하세요.</div>', unsafe_allow_html=True)
 
-if t_c2.button("🌴 휴무 등록"):
+if t_c2.button("🌴 휴무 등록", use_container_width=True):
     now_ts = get_now_kst().strftime("%H:%M:%S")
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": now_ts}
     if save_to_gsheet(row): st.rerun()
@@ -189,7 +159,7 @@ if t_c2.button("🌴 휴무 등록"):
 st.divider()
 
 # --- 인센티브 섹션 ---
-if "current_incen_sum" not in st.session_state:
+if "current_incen_sum" not in st.session_state or st.session_state.last_date != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
 
@@ -210,9 +180,8 @@ if b_c3.button("🧹 리셋"):
     st.session_state.incen_history = []
     if is_edit:
         item_total = sum([int(existing_row.iloc[0][f'item{i}']) * item_prices[i-1] for i in range(1, 8)])
-        now_ts = get_now_kst().strftime("%H:%M:%S")
         row = existing_row.iloc[0].to_dict()
-        row.update({"인센티브": 0, "합계": item_total, "입력시간": now_ts})
+        row.update({"인센티브": 0, "합계": item_total, "입력시간": get_now_kst().strftime("%H:%M:%S")})
         save_to_gsheet(row)
     st.rerun()
 
@@ -228,7 +197,7 @@ for i in range(1, 7, 2):
 val7 = existing_row.iloc[0]['item7'] if is_edit else 0
 counts.append(st.number_input(item_names[6], 0, value=int(val7), key="inp_7"))
 
-if st.button("✅ 최종 실적 저장", type="primary"):
+if st.button("✅ 최종 실적 저장", type="primary", use_container_width=True):
     item_total = sum([int(c) * int(p) for c, p in zip(counts, item_prices)])
     final_day_total = int(st.session_state.current_incen_sum) + item_total
     now_ts = get_now_kst().strftime("%H:%M:%S")
