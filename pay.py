@@ -5,7 +5,7 @@ import sqlite3
 import re
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.4.0", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.4.1", layout="centered")
 
 # --- 유틸리티 함수 ---
 def format_comma(val):
@@ -57,7 +57,7 @@ def init_db():
 
 init_db()
 
-# --- 데이터 로드 함수 ---
+# --- 데이터 로드 ---
 def load_user_settings(name):
     conn = get_connection()
     df = pd.read_sql("SELECT * FROM settings_v3 WHERE 직원명 = ?", conn, params=(name,))
@@ -78,7 +78,7 @@ def load_staff_config(name):
     if df.empty: return {"base_salary": 3500000, "start_day": 13, "insurance": 104760}
     return {"base_salary": df.iloc[0]['base_salary'], "start_day": df.iloc[0]['start_day'], "insurance": df.iloc[0]['insurance']}
 
-# --- 로그인 ---
+# --- 로그인 세션 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -143,52 +143,68 @@ for i in range(1, 8):
 df_all['인센티브'] = pd.to_numeric(df_all['인센티브'], errors='coerce').fillna(0).astype(int)
 df_all['합계'] = pd.to_numeric(df_all['합계'], errors='coerce').fillna(0).astype(int)
 
-# --- CSS ---
+# --- CSS (UI 최적화) ---
 st.markdown("""
     <style>
-    [data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 8px !important; }
-    [data-testid="stHorizontalBlock"] > div { flex: 1 1 calc(50% - 10px) !important; min-width: calc(50% - 10px) !important; }
-    .stButton>button { width: 100%; font-weight: bold; }
-    .status-box { padding: 12px; border-radius: 8px; margin-bottom: 10px; text-align: center; font-weight: bold; font-size: 13px; border: 1px solid #ddd; }
-    .weekly-bar { display: flex; justify-content: space-between; margin-bottom: 10px; background: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
-    .weekly-day { text-align: center; font-size: 10px; }
-    .incen-log { font-size: 12px; background: #f9f9f9; padding: 5px 10px; border-radius: 4px; border-left: 3px solid #007bff; margin: 5px 0; }
-    .report-table { width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }
-    .report-table th, .report-table td { border: 1px solid #eee; padding: 6px; white-space: nowrap; }
+    /* 전체 레이아웃 */
+    [data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; }
+    [data-testid="stHorizontalBlock"] > div { flex: 1 1 0 !important; min-width: 0 !important; }
+    
+    /* 버튼 공통 스타일 */
+    .stButton>button { width: 100%; font-weight: bold; border-radius: 8px; padding: 0.5rem; }
+    
+    /* 7일 등록 현황 스타일 */
+    .weekly-container {
+        display: flex; justify-content: space-around; background: #ffffff;
+        border: 1px solid #e0e0e0; border-radius: 12px; padding: 10px 5px;
+        margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .weekly-item { text-align: center; flex: 1; border-right: 1px solid #f0f0f0; }
+    .weekly-item:last-child { border-right: none; }
+    .weekly-date { font-size: 11px; color: #666; margin-bottom: 4px; }
+    .weekly-icon { font-size: 16px; }
+
+    /* 상태 박스 */
+    .status-box { padding: 12px; border-radius: 10px; margin-bottom: 15px; text-align: center; font-weight: bold; border: 1px solid #ddd; }
+    
+    /* 인센 로그 */
+    .incen-log { font-size: 13px; background: #f0f7ff; padding: 8px 12px; border-radius: 8px; border-left: 4px solid #007bff; margin: 10px 0; color: #0056b3; }
+    
+    /* 리포트 테이블 */
+    .report-table { width: 100%; font-size: 11px; text-align: center; border-collapse: collapse; background: white; }
+    .report-table th, .report-table td { border: 1px solid #eee; padding: 8px 4px; white-space: nowrap; }
+    .report-table th { background-color: #f8f9fa; color: #333; }
     </style>
     """, unsafe_allow_html=True)
 
 # 1. 실적 입력
 st.write(f"### 💼 {user_name}님 실적")
-t_c1, t_c2 = st.columns(2)
+t_c1, t_c2 = st.columns([1.2, 0.8])
 sel_date = t_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
-# 🔄 날짜 변경 시 입력값 초기화 로직
-if "last_date" not in st.session_state:
-    st.session_state.last_date = str_date
-
+# 🔄 날짜 변경 시 초기화
+if "last_date" not in st.session_state: st.session_state.last_date = str_date
 if st.session_state.last_date != str_date:
     st.session_state.current_incen_sum = 0
     st.session_state.incen_history = []
     st.session_state.last_date = str_date
-    # 날짜 바뀔 때 강제 새로고침 효과를 위해 rerun을 쓰지 않고 값만 초기화하여 아래 로직에서 반영되게 함
 
-# 📅 [신규] 최근 1주일 등록 현황
-st.write("**📅 최근 7일 등록 현황**")
-weekly_cols = st.columns(7)
+# 📅 [수정] 7일 등록 현황 디자인 (가로 1열)
+st.write("**📅 최근 7일 현황**")
+weekly_html = '<div class="weekly-container">'
 today = date.today()
 for i in range(6, -1, -1):
     target_d = today - timedelta(days=i)
     target_str = target_d.strftime("%Y-%m-%d")
     day_data = df_all[df_all["날짜"] == target_str]
-    
-    with weekly_cols[6-i]:
-        if not day_data.empty:
-            if day_data.iloc[0]['비고'] == "휴무": icon = "🌴"
-            else: icon = "✅"
-        else: icon = "⚪"
-        st.markdown(f"<div class='weekly-day'>{target_d.strftime('%m/%d')}<br>{icon}</div>", unsafe_allow_html=True)
+    if not day_data.empty:
+        icon = "🌴" if day_data.iloc[0]['비고'] == "휴무" else "✅"
+    else: icon = "⚪"
+    # 날짜 포맷 수정: "10일"
+    weekly_html += f'<div class="weekly-item"><div class="weekly-date">{target_d.day}일</div><div class="weekly-icon">{icon}</div></div>'
+weekly_html += '</div>'
+st.markdown(weekly_html, unsafe_allow_html=True)
 
 # 🟢 상단 상태 표시
 existing_row = df_all[df_all["날짜"] == str_date]
@@ -198,13 +214,13 @@ if is_edit:
     reg_time = existing_row.iloc[0].get('입력시간', '정보없음')
     is_off = existing_row.iloc[0]['비고'] == "휴무"
     if is_off:
-        st.markdown(f'<div class="status-box" style="background-color: #fffde7; color: #f57f17; border-color: #fbc02d;">🌴 오늘은 휴무로 등록됨 ({reg_time} 저장됨)</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="status-box" style="background-color: #fffde7; color: #f57f17; border-color: #fbc02d;">🌴 오늘은 휴무 ({reg_time} 저장)</div>', unsafe_allow_html=True)
     else:
-        st.markdown(f'<div class="status-box" style="background-color: #e3f2fd; color: #0d47a1; border-color: #2196f3;">✅ {str_date} 데이터 등록됨 ({reg_time} 저장됨)</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="status-box" style="background-color: #e3f2fd; color: #0d47a1; border-color: #2196f3;">✅ {str_date} 등록됨 ({reg_time} 저장)</div>', unsafe_allow_html=True)
 else:
-    st.markdown(f'<div class="status-box" style="background-color: #fafafa; color: #616161;">📝 실적을 입력하거나 휴무를 등록해주세요.</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="status-box" style="background-color: #fafafa; color: #616161;">📝 실적을 입력하거나 휴무를 등록하세요.</div>', unsafe_allow_html=True)
 
-if t_c2.button("🌴 휴무"):
+if t_c2.button("🌴 휴무 등록"):
     conn = get_connection(); c = conn.cursor()
     now_ts = datetime.now().strftime("%H:%M:%S")
     c.execute("INSERT OR REPLACE INTO salary (직원명, 날짜, 인센티브, item1, item2, item3, item4, item5, item6, item7, 합계, 비고, 입력시간) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?)", (user_name, str_date, "휴무", now_ts))
@@ -212,37 +228,33 @@ if t_c2.button("🌴 휴무"):
 
 st.divider()
 
-# 💰 인센티브 합계 및 로그 (날짜 변경 시 0으로 세팅됨)
+# 💰 인센티브 섹션
 if "current_incen_sum" not in st.session_state:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
 
-# 만약 편집 모드인데 세션 값이 0이라면(날짜를 막 바꿨다면) 기존 데이터 불러오기
 if is_edit and st.session_state.current_incen_sum == 0 and not st.session_state.incen_history:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"])
-    if st.session_state.current_incen_sum > 0:
-        st.session_state.incen_history = [st.session_state.current_incen_sum]
+    if st.session_state.current_incen_sum > 0: st.session_state.incen_history = [st.session_state.current_incen_sum]
 
 st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
 if st.session_state.incen_history:
     log_text = " + ".join([f"{amt:,}" for amt in st.session_state.incen_history])
-    st.markdown(f'<div class="incen-log">📋 입력 로그: {log_text}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="incen-log">📋 내역: {log_text}</div>', unsafe_allow_html=True)
 
 add_amt = st.number_input("금액 입력", min_value=0, step=1000, value=0, label_visibility="collapsed")
-bc1, bc2, bc3 = st.columns(3)
-if bc1.button("➕ 추가"): 
-    st.session_state.current_incen_sum += add_amt
-    st.session_state.incen_history.append(add_amt)
-    st.rerun()
-if bc2.button("↩️ 취소") and st.session_state.incen_history: 
-    st.session_state.current_incen_sum -= st.session_state.incen_history.pop()
-    st.rerun()
-if bc3.button("🧹 리셋"): 
-    st.session_state.current_incen_sum = 0
-    st.session_state.incen_history = []
-    st.rerun()
 
-# 📦 품목 수량 입력
+# 🔘 [수정] 추가, 취소, 리셋 버튼 가로 1열 정렬
+b_c1, b_c2, b_c3 = st.columns(3)
+if b_c1.button("➕ 추가"): 
+    st.session_state.current_incen_sum += add_amt
+    st.session_state.incen_history.append(add_amt); st.rerun()
+if b_c2.button("↩️ 취소") and st.session_state.incen_history: 
+    st.session_state.current_incen_sum -= st.session_state.incen_history.pop(); st.rerun()
+if b_c3.button("🧹 리셋"): 
+    st.session_state.current_incen_sum = 0; st.session_state.incen_history = []; st.rerun()
+
+# 📦 품목 수량 (2열)
 st.write("**📦 품목 수량**")
 counts = []
 for i in range(1, 7, 2):
@@ -281,7 +293,7 @@ p_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_da
 if not p_df.empty:
     total_extra = p_df["합계"].sum()
     final_pay = int(my_config['base_salary'] + total_extra - my_config['insurance'])
-    st.info(f"📅 정산 기간: {start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')}")
+    st.info(f"📅 {start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')}")
     st.markdown(f"### **🏦 실수령 예상: {final_pay:,}원**")
     
     headers = ["날짜", "인센"] + [n[:2] for n in item_names] + ["합계"]
@@ -289,7 +301,7 @@ if not p_df.empty:
     rows_html = ""
     for _, r in p_df.iterrows():
         is_h = r['비고'] == "휴무"
-        row_style = 'style="background-color: #fff9c4;"' if is_h else ""
+        row_style = 'style="background-color: #fffde7;"' if is_h else ""
         rows_html += f"<tr {row_style}><td>{datetime.strptime(r['날짜'], '%Y-%m-%d').day}일</td>"
         if is_h: rows_html += '<td colspan="9" style="text-align:center; color:#f57f17; font-weight:bold;">🌴 휴무</td>'
         else:
