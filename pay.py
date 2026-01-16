@@ -7,7 +7,7 @@ import re
 import os
 
 # 소프트웨어 버전
-SW_VERSION = "v1.5.4 (Final)"
+SW_VERSION = "v1.5.6"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
@@ -16,28 +16,44 @@ st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
-    # 시트 접근 권한 범위 설정
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    
     try:
-        # 1. Streamlit Cloud Secrets 확인 (배포용)
         if "gcp_service_account" in st.secrets:
             creds_info = dict(st.secrets["gcp_service_account"])
-            # 키값 내의 줄바꿈 문자 처리
+            
             if "private_key" in creds_info:
-                creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+                pk = creds_info["private_key"]
+                
+                # [강제 교정 로직] 
+                # 1. 일단 모든 줄바꿈과 공백을 제거하고 순수 데이터만 추출
+                header = "-----BEGIN PRIVATE KEY-----"
+                footer = "-----END PRIVATE KEY-----"
+                
+                # 헤더와 푸터를 제외한 본문만 추출
+                inner_key = pk.replace(header, "").replace(footer, "").replace("\\n", "").replace("\n", "").strip()
+                
+                # 2. 본문을 구글이 읽을 수 있는 64글자 단위의 표준 형식으로 재배열
+                formatted_key = header + "\n"
+                for i in range(0, len(inner_key), 64):
+                    formatted_key += inner_key[i:i+64] + "\n"
+                formatted_key += footer
+                
+                creds_info["private_key"] = formatted_key
+
             creds = Credentials.from_service_account_info(creds_info, scopes=scope)
-        # 2. 로컬 파일 확인 (테스트용)
         elif os.path.exists("google_keys.json"):
             creds = Credentials.from_service_account_file("google_keys.json", scopes=scope)
         else:
-            st.error("❌ 구글 인증 정보(Secrets 또는 파일)를 찾을 수 없습니다.")
+            st.error("❌ 인증 정보를 찾을 수 없습니다.")
             st.stop()
-            
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"⚠️ 인증 오류 발생: {e}")
+        st.info("데이터 규격을 강제로 맞추는 중 오류가 발생했습니다. 키 값이 올바른지 다시 확인이 필요할 수 있습니다.")
         st.stop()
+
+# --- 이하 load_data_from_gsheet, save_to_gsheet, 디자인 로직은 이전과 동일 (생략 없이 전체 적용) ---
+# ... (기존의 모든 UI 및 비즈니스 로직 유지) ...
 
 def load_data_from_gsheet():
     try:
