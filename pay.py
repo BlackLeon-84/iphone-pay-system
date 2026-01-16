@@ -5,39 +5,39 @@ import gspread
 from google.oauth2.service_account import Credentials
 import os
 
-# 소프트웨어 버전 (정의되지 않은 함수 오류 해결판)
-SW_VERSION = "v2.1.1"
+# 소프트웨어 버전
+SW_VERSION = "v2.1.2"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
 
-# --- [여기서부터 함수 정의 - 절대 삭제하거나 이름 변경 금지] ---
+# --- [여기서부터 설정 및 함수 정의] ---
+
+# 1. 시트 이름 정의 (이게 빠져서 에러가 났었습니다)
+SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
-    """구글 시트 연동을 위한 클라이언트를 생성하는 함수"""
+    """구글 시트 연동 클라이언트 생성"""
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
         if "gcp_service_account" in st.secrets:
             creds_info = dict(st.secrets["gcp_service_account"])
-            # 비밀키의 줄바꿈 문자 보정
             if "private_key" in creds_info:
                 creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
-            
             creds = Credentials.from_service_account_info(creds_info, scopes=scope)
             return gspread.authorize(creds)
         else:
             st.error("❌ Secrets 설정이 비어있습니다.")
             st.stop()
     except Exception as e:
-        st.error(f"⚠️ 인증 도중 오류 발생: {e}")
+        st.error(f"⚠️ 인증 오류: {e}")
         st.stop()
 
-# --- 데이터 로드 및 저장 (함수 정의) ---
-
 def load_data_from_gsheet():
+    """시트에서 데이터 읽어오기"""
     try:
-        client = get_gsheet_client() # 여기서 위에서 정의한 함수를 호출합니다.
-        sheet = client.open("아이폰정산").sheet1
+        client = get_gsheet_client()
+        sheet = client.open(SHEET_NAME).sheet1 # SHEET_NAME 변수 사용
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         if not df.empty:
@@ -50,9 +50,10 @@ def load_data_from_gsheet():
         return pd.DataFrame(columns=["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
 
 def save_to_gsheet(df_row):
+    """시트에 데이터 저장하기"""
     try:
-        client = get_gsheet_client() # 여기서도 함수를 호출합니다.
-        sheet = client.open("아이폰정산").sheet1
+        client = get_gsheet_client()
+        sheet = client.open(SHEET_NAME).sheet1 # SHEET_NAME 변수 사용
         all_data = sheet.get_all_values()
         name, target_date = df_row['직원명'], df_row['날짜']
         
@@ -72,47 +73,10 @@ def save_to_gsheet(df_row):
         st.error(f"저장 실패 에러: {e}")
         return False
 
-# --- 이후 공통 유틸리티 및 UI 디자인 (기존 태완님 코드 유지) ---
-# ... [이하 STAFF_LIST, UI 코드 등] ...
+# --- 이후 공통 유틸리티 및 로그인 세션 (태완님 원본 유지) ---
 
-# --- 데이터 로드 및 저장 (기존 디자인/기능 유지) ---
-def load_data_from_gsheet():
-    try:
-        client = get_gsheet_client()
-        sheet = client.open(SHEET_NAME).sheet1
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        if not df.empty:
-            for i in range(1, 8):
-                df[f'item{i}'] = pd.to_numeric(df[f'item{i}'], errors='coerce').fillna(0).astype(int)
-            df['인센티브'] = pd.to_numeric(df['인센티브'], errors='coerce').fillna(0).astype(int)
-            df['합계'] = pd.to_numeric(df['합계'], errors='coerce').fillna(0).astype(int)
-        return df
-    except:
-        return pd.DataFrame(columns=["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
-
-def save_to_gsheet(df_row):
-    try:
-        client = get_gsheet_client()
-        sheet = client.open(SHEET_NAME).sheet1
-        all_data = sheet.get_all_values()
-        name, target_date = df_row['직원명'], df_row['날짜']
-        row_idx = -1
-        for i, row in enumerate(all_data):
-            if len(row) > 1 and row[0] == name and row[1] == target_date:
-                row_idx = i + 1
-                break
-        new_values = list(df_row.values())
-        if row_idx != -1: sheet.update(f"A{row_idx}", [new_values])
-        else: sheet.append_row(new_values)
-        return True
-    except Exception as e:
-        st.error(f"저장 실패: {e}"); return False
-
-# --- 공통 유틸리티 ---
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 로그인 세션 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False; st.session_state.user_name = ""
@@ -126,6 +90,9 @@ if not st.session_state.logged_in:
             if user_id == "태완" and admin_pw != "102030": st.error("비밀번호 틀림")
             else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     st.stop()
+
+# --- 메인 정산 UI (태완님 기존 디자인 100% 동일) ---
+# ... (이하 태완님의 기존 UI 코드를 그대로 사용하세요)
 
 # --- 메인 설정 (원본 유지) ---
 user_name = st.session_state.user_name
