@@ -5,7 +5,7 @@ import sqlite3
 import re
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.3.9", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.4.0", layout="centered")
 
 # --- 유틸리티 함수 ---
 def format_comma(val):
@@ -36,7 +36,6 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    # 실적 테이블 (입력시간 컬럼 추가)
     c.execute('''CREATE TABLE IF NOT EXISTS salary
                  (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 
                   item1 INTEGER DEFAULT 0, item2 INTEGER DEFAULT 0, item3 INTEGER DEFAULT 0, 
@@ -44,7 +43,6 @@ def init_db():
                   item7 INTEGER DEFAULT 0, 합계 INTEGER, 비고 TEXT, 
                   입력시간 TEXT, PRIMARY KEY(직원명, 날짜))''')
     
-    # 컬럼 자동 보정
     cursor = c.execute("PRAGMA table_info(salary)")
     cols = [row[1] for row in cursor.fetchall()]
     if '입력시간' not in cols:
@@ -54,17 +52,12 @@ def init_db():
         if f'item{i}' not in cols:
             try: c.execute(f"ALTER TABLE salary ADD COLUMN item{i} INTEGER DEFAULT 0")
             except: pass
-
-    c.execute('''CREATE TABLE IF NOT EXISTS settings_v3
-                 (직원명 TEXT, id TEXT, display_name TEXT, price INTEGER, PRIMARY KEY(직원명, id))''')
-    c.execute('''CREATE TABLE IF NOT EXISTS staff_configs
-                 (직원명 TEXT PRIMARY KEY, base_salary INTEGER, start_day INTEGER, insurance INTEGER)''')
     conn.commit()
     conn.close()
 
 init_db()
 
-# --- 데이터 로드 ---
+# --- 데이터 로드 함수 ---
 def load_user_settings(name):
     conn = get_connection()
     df = pd.read_sql("SELECT * FROM settings_v3 WHERE 직원명 = ?", conn, params=(name,))
@@ -103,14 +96,13 @@ if not st.session_state.logged_in:
 
 user_name = st.session_state.user_name
 
-# --- 사이드바 설정창 ---
+# --- 사이드바 ---
 with st.sidebar:
     st.header("⚙️ 시스템 관리")
     if user_name == "태완":
         target_staff = st.selectbox("👤 설정 직원", STAFF_LIST)
         u_sets = load_user_settings(target_staff)
         u_conf = load_staff_config(target_staff)
-        
         with st.expander("📦 품목 설정", expanded=True):
             with st.form(f"items_{target_staff}"):
                 new_it = []
@@ -123,7 +115,6 @@ with st.sidebar:
                     conn = get_connection(); c = conn.cursor()
                     c.executemany("UPDATE settings_v3 SET display_name=?, price=? WHERE 직원명=? AND id=?", new_it)
                     conn.commit(); conn.close(); add_log(f"✅ {target_staff} 품목 저장"); st.rerun()
-
         with st.expander("💰 급여 설정"):
             with st.form(f"sal_{target_staff}"):
                 bv = st.text_input("기본급", format_comma(u_conf['base_salary']))
@@ -158,8 +149,10 @@ st.markdown("""
     [data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 8px !important; }
     [data-testid="stHorizontalBlock"] > div { flex: 1 1 calc(50% - 10px) !important; min-width: calc(50% - 10px) !important; }
     .stButton>button { width: 100%; font-weight: bold; }
-    .status-box { padding: 12px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 14px; border: 1px solid #ddd; }
-    .incen-log { font-size: 12px; background: #f9f9f9; padding: 5px 10px; border-radius: 4px; border-left: 3px solid #007bff; margin-top: 5px; }
+    .status-box { padding: 12px; border-radius: 8px; margin-bottom: 10px; text-align: center; font-weight: bold; font-size: 13px; border: 1px solid #ddd; }
+    .weekly-bar { display: flex; justify-content: space-between; margin-bottom: 10px; background: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
+    .weekly-day { text-align: center; font-size: 10px; }
+    .incen-log { font-size: 12px; background: #f9f9f9; padding: 5px 10px; border-radius: 4px; border-left: 3px solid #007bff; margin: 5px 0; }
     .report-table { width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }
     .report-table th, .report-table td { border: 1px solid #eee; padding: 6px; white-space: nowrap; }
     </style>
@@ -171,7 +164,33 @@ t_c1, t_c2 = st.columns(2)
 sel_date = t_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
-# 🟢 [수정] 상단 상태 표시 로직 (등록 시간 및 휴무 여부 포함)
+# 🔄 날짜 변경 시 입력값 초기화 로직
+if "last_date" not in st.session_state:
+    st.session_state.last_date = str_date
+
+if st.session_state.last_date != str_date:
+    st.session_state.current_incen_sum = 0
+    st.session_state.incen_history = []
+    st.session_state.last_date = str_date
+    # 날짜 바뀔 때 강제 새로고침 효과를 위해 rerun을 쓰지 않고 값만 초기화하여 아래 로직에서 반영되게 함
+
+# 📅 [신규] 최근 1주일 등록 현황
+st.write("**📅 최근 7일 등록 현황**")
+weekly_cols = st.columns(7)
+today = date.today()
+for i in range(6, -1, -1):
+    target_d = today - timedelta(days=i)
+    target_str = target_d.strftime("%Y-%m-%d")
+    day_data = df_all[df_all["날짜"] == target_str]
+    
+    with weekly_cols[6-i]:
+        if not day_data.empty:
+            if day_data.iloc[0]['비고'] == "휴무": icon = "🌴"
+            else: icon = "✅"
+        else: icon = "⚪"
+        st.markdown(f"<div class='weekly-day'>{target_d.strftime('%m/%d')}<br>{icon}</div>", unsafe_allow_html=True)
+
+# 🟢 상단 상태 표시
 existing_row = df_all[df_all["날짜"] == str_date]
 is_edit = not existing_row.empty
 
@@ -193,11 +212,16 @@ if t_c2.button("🌴 휴무"):
 
 st.divider()
 
-# 💰 인센티브 합계 및 로그 (복구 완료)
-if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
+# 💰 인센티브 합계 및 로그 (날짜 변경 시 0으로 세팅됨)
+if "current_incen_sum" not in st.session_state:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
-    st.session_state.last_date = str_date
+
+# 만약 편집 모드인데 세션 값이 0이라면(날짜를 막 바꿨다면) 기존 데이터 불러오기
+if is_edit and st.session_state.current_incen_sum == 0 and not st.session_state.incen_history:
+    st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"])
+    if st.session_state.current_incen_sum > 0:
+        st.session_state.incen_history = [st.session_state.current_incen_sum]
 
 st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
 if st.session_state.incen_history:
@@ -226,15 +250,14 @@ for i in range(1, 7, 2):
     for j, col in enumerate([c1, c2]):
         idx = i + j
         val = existing_row.iloc[0][f'item{idx}'] if is_edit else 0
-        counts.append(col.number_input(item_names[idx-1], 0, value=int(val), key=f"inp_{idx}"))
+        counts.append(col.number_input(item_names[idx-1], 0, value=int(val), key=f"inp_{idx}_{str_date}"))
 val7 = existing_row.iloc[0]['item7'] if is_edit else 0
-counts.append(st.number_input(item_names[6], 0, value=int(val7), key="inp_7"))
+counts.append(st.number_input(item_names[6], 0, value=int(val7), key=f"inp_7_{str_date}"))
 
 if st.button("✅ 최종 실적 저장", type="primary"):
     item_total = sum([int(c) * int(p) for c, p in zip(counts, item_prices)])
     final_day_total = int(st.session_state.current_incen_sum) + item_total
     now_ts = datetime.now().strftime("%H:%M:%S")
-    
     conn = get_connection(); c = conn.cursor()
     sql = "INSERT OR REPLACE INTO salary (직원명, 날짜, 인센티브, item1, item2, item3, item4, item5, item6, item7, 합계, 비고, 입력시간) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     c.execute(sql, (user_name, str_date, st.session_state.current_incen_sum, *counts, final_day_total, "정상", now_ts))
@@ -268,8 +291,7 @@ if not p_df.empty:
         is_h = r['비고'] == "휴무"
         row_style = 'style="background-color: #fff9c4;"' if is_h else ""
         rows_html += f"<tr {row_style}><td>{datetime.strptime(r['날짜'], '%Y-%m-%d').day}일</td>"
-        if is_h:
-            rows_html += '<td colspan="9" style="text-align:center; color:#f57f17; font-weight:bold;">🌴 휴무 등록됨</td>'
+        if is_h: rows_html += '<td colspan="9" style="text-align:center; color:#f57f17; font-weight:bold;">🌴 휴무</td>'
         else:
             rows_html += f"<td>{int(r['인센티브']):,}</td>"
             for i in range(1, 8): rows_html += f"<td>{int(r[f'item{i}'])}</td>"
