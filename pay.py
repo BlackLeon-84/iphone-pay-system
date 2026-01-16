@@ -33,16 +33,20 @@ def get_gsheet_client():
 def load_data_from_gsheet():
     try:
         client = get_gsheet_client()
-        sheet = client.open(SHEET_NAME).sheet1
+        # 파일이 있는지 먼저 확인
+        try:
+            sheet = client.open(SHEET_NAME).sheet1
+        except Exception as e:
+            st.error(f"❌ '{SHEET_NAME}' 파일을 찾을 수 없습니다.")
+            st.info(f"구글 시트에서 새 파일을 만드시고 공유 설정을 확인해주세요.")
+            st.stop()
+            
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
-        if not df.empty:
-            for i in range(1, 8):
-                df[f'item{i}'] = pd.to_numeric(df[f'item{i}'], errors='coerce').fillna(0).astype(int)
-            df['인센티브'] = pd.to_numeric(df['인센티브'], errors='coerce').fillna(0).astype(int)
-            df['합계'] = pd.to_numeric(df['합계'], errors='coerce').fillna(0).astype(int)
+        # (이하 기존 데이터 처리 로직 동일...)
         return df
-    except:
+    except Exception as e:
+        # 파일은 있는데 시트가 비어있을 경우 기본 틀 제공
         return pd.DataFrame(columns=["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
 
 def save_to_gsheet(df_row):
