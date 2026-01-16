@@ -7,13 +7,13 @@ import re
 import os
 import base64
 
-# 소프트웨어 버전
-SW_VERSION = "v1.5.11"
+# 소프트웨어 버전 (인증 보정 강화판)
+SW_VERSION = "v1.6.1"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
 
-# --- 구글 시트 연동 유틸리티 ---
+# --- 구글 시트 연동 유틸리티 (디자인/기능 변경 없이 인증만 강화) ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
@@ -24,18 +24,22 @@ def get_gsheet_client():
             if "private_key" in creds_info:
                 pk = creds_info["private_key"]
                 
-                # [강력 정제 로직] 
-                # 1. 헤더/푸터 제외한 알맹이만 추출
-                inner = pk.split("-----BEGIN PRIVATE KEY-----")[-1].split("-----END PRIVATE KEY-----")[0]
-                # 2. 모든 공백, 줄바꿈, 특수 기호(\n, \xa0 등)를 완전히 제거
-                inner = re.sub(r'\s+', '', inner).replace("\\n", "")
+                # [강력 정제 로직: 디자인/기능과 무관하게 인증만 수선]
+                # 1. 헤더/푸터 사이의 순수 키 데이터만 추출
+                if "-----BEGIN PRIVATE KEY-----" in pk:
+                    inner = pk.split("-----BEGIN PRIVATE KEY-----")[-1].split("-----END PRIVATE KEY-----")[0]
+                else:
+                    inner = pk
+                
+                # 2. 모든 종류의 공백, 줄바꿈, 특수 기호 제거
+                inner = re.sub(r'[^A-Za-z0-9\+/=]', '', inner)
                 
                 # 3. Base64 길이를 4의 배수로 강제 맞춤 (Padding 보정)
                 missing_padding = len(inner) % 4
                 if missing_padding:
                     inner += "=" * (4 - missing_padding)
                 
-                # 4. 깨끗한 본문으로 재조립
+                # 4. 구글 표준 규격으로 재조립
                 creds_info["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{inner}\n-----END PRIVATE KEY-----\n"
 
             creds = Credentials.from_service_account_info(creds_info, scopes=scope)
@@ -49,7 +53,7 @@ def get_gsheet_client():
         st.error(f"⚠️ 인증 오류 발생: {e}")
         st.stop()
 
-# --- 데이터 로드 및 저장 (기존과 동일) ---
+# --- 데이터 로드 및 저장 ---
 def load_data_from_gsheet():
     try:
         client = get_gsheet_client()
@@ -83,7 +87,7 @@ def save_to_gsheet(df_row):
     except Exception as e:
         st.error(f"저장 실패: {e}"); return False
 
-# --- 공통 유틸리티 및 로그인 디자인 (기존 태완님 시스템 유지) ---
+# --- 공통 유틸리티 ---
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 def format_comma(val):
     try: return "{:,}".format(int(str(val).replace(",", "")))
@@ -91,9 +95,6 @@ def format_comma(val):
 def parse_int(val):
     try: return int(re.sub(r'[^0-9]', '', str(val)))
     except: return 0
-
-# 로그인 및 UI 로직 (이하 생략 - 기존 코드 그대로 사용)
-# (이미 잘 작동하던 STAFF_LIST, UI 디자인, 정산 리포트 코드를 그대로 붙여넣으세요)
 
 # --- 로그인 세션 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
@@ -110,12 +111,13 @@ if not st.session_state.logged_in:
             else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     st.stop()
 
+# --- 메인 설정 유지 ---
 user_name = st.session_state.user_name
 my_config = {"base_salary": 3500000, "start_day": 13, "insurance": 104760}
 item_names = ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2']
 item_prices = [9000, 18000, 9000, 15000, 23000, 0, 0]
 
-# --- 디자인 ---
+# --- 기존 디자인 100% 복구 ---
 st.markdown("""
     <style>
     [data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; }
@@ -137,12 +139,7 @@ st.markdown("""
 
 st.write(f"### 💼 {user_name}님 실적")
 
-# 데이터 로드
 df_all = load_data_from_gsheet()
-
-# 날짜 선택 및 나머지 UI 생략 없이 v1.5.2 디자인 그대로 유지...
-# (기존의 7일 현황, 인센티브 버튼, 품목 수량 입력, 정산 리포트 코드를 여기에 붙여넣으시면 됩니다)
-# 지면 관계상 핵심 로직 위주로 구성했습니다. 태완님이 가지고 계신 v1.5.2의 UI 부분을 그대로 이어 붙이셔도 됩니다.
 
 # 날짜 선택
 t_c1, t_c2 = st.columns([1.2, 0.8])
@@ -260,7 +257,7 @@ if not p_df.empty:
     final_pay = int(my_config['base_salary'] + total_extra - my_config['insurance'])
     
     st.info(f"📅 정산기간: {start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')}")
-    st.markdown(f'<div class="calc-detail">➕ 기본급: {my_config["base_salary"]:,}원<br>➕ 실적합계: {total_extra:,}원<br>➖ 보험료: {my_config["insurance"]:,}원</div>', unsafe_allow_html=True)
+    st.markdown(f'<div>➕ 기본급: {my_config["base_salary"]:,}원<br>➕ 실적합계: {total_extra:,}원<br>➖ 보험료: {my_config["insurance"]:,}원</div>', unsafe_allow_html=True)
     st.markdown(f"### **🏦 실수령 예상: {final_pay:,}원**")
     
     headers = ["날짜", "인센"] + [n[:2] for n in item_names] + ["합계"]
