@@ -5,9 +5,10 @@ import gspread
 from google.oauth2.service_account import Credentials
 import re
 import os
+import base64
 
 # 소프트웨어 버전
-SW_VERSION = "v1.5.7"
+SW_VERSION = "v1.5.8"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
@@ -19,11 +20,32 @@ def get_gsheet_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
         if "gcp_service_account" in st.secrets:
-            # [가장 깔끔한 순정 로직]
             creds_info = dict(st.secrets["gcp_service_account"])
             if "private_key" in creds_info:
-                # 줄바꿈 기호만 정상화
-                creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n").strip()
+                pk = creds_info["private_key"]
+                
+                # [강력 교정 로직]
+                # 1. 헤더와 푸터 분리
+                header = "-----BEGIN PRIVATE KEY-----"
+                footer = "-----END PRIVATE KEY-----"
+                
+                # 2. 본문만 추출 (줄바꿈, 공백, \n 기호 싹 제거)
+                inner_key = pk.replace(header, "").replace(footer, "").replace("\\n", "").replace("\n", "").replace(" ", "").strip()
+                
+                # 3. Base64 글자수 맞추기 (4의 배수가 아니면 =를 붙여줌)
+                # 이 부분이 'number of data characters' 에러를 직접 해결합니다.
+                missing_padding = len(inner_key) % 4
+                if missing_padding:
+                    inner_key += "=" * (4 - missing_padding)
+                
+                # 4. 구글 표준 형식(64자 줄바꿈)으로 재조립
+                formatted_key = header + "\n"
+                for i in range(0, len(inner_key), 64):
+                    formatted_key += inner_key[i:i+64] + "\n"
+                formatted_key += footer
+                
+                creds_info["private_key"] = formatted_key
+
             creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         elif os.path.exists("google_keys.json"):
             creds = Credentials.from_service_account_file("google_keys.json", scopes=scope)
@@ -33,14 +55,11 @@ def get_gsheet_client():
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"⚠️ 인증 오류 발생: {e}")
-        st.info("Secrets 칸에 불필요한 중괄호 { } 가 포함되어 있는지 확인해주세요.")
+        st.info("Secrets의 private_key 값이 손상되었을 수 있습니다. JSON 파일의 원본을 다시 복사해보세요.")
         st.stop()
 
-# --- 이하 load_data_from_gsheet, save_to_gsheet, 디자인 로직은 이전과 동일 (전체 적용) ---
-# ... (기존 UI 및 정산 기능 코드 생략 없이 적용) ...
-
-# --- 이하 load_data_from_gsheet, save_to_gsheet, 디자인 로직은 이전과 동일 (생략 없이 전체 적용) ---
-# ... (기존의 모든 UI 및 비즈니스 로직 유지) ...
+# --- 이하 load_data_from_gsheet, save_to_gsheet, 디자인 및 UI 로직은 100% 동일 ---
+# (태완님이 요청하신 기존의 모든 디자인과 합계 계산 로직을 그대로 유지합니다.)
 
 def load_data_from_gsheet():
     try:
