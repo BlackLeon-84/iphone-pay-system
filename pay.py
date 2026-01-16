@@ -5,10 +5,9 @@ import gspread
 from google.oauth2.service_account import Credentials
 import re
 import os
-import base64
 
 # 소프트웨어 버전
-SW_VERSION = "v1.5.8"
+SW_VERSION = "v1.5.9"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
@@ -24,27 +23,15 @@ def get_gsheet_client():
             if "private_key" in creds_info:
                 pk = creds_info["private_key"]
                 
-                # [강력 교정 로직]
-                # 1. 헤더와 푸터 분리
-                header = "-----BEGIN PRIVATE KEY-----"
-                footer = "-----END PRIVATE KEY-----"
-                
-                # 2. 본문만 추출 (줄바꿈, 공백, \n 기호 싹 제거)
-                inner_key = pk.replace(header, "").replace(footer, "").replace("\\n", "").replace("\n", "").replace(" ", "").strip()
-                
-                # 3. Base64 글자수 맞추기 (4의 배수가 아니면 =를 붙여줌)
-                # 이 부분이 'number of data characters' 에러를 직접 해결합니다.
-                missing_padding = len(inner_key) % 4
-                if missing_padding:
-                    inner_key += "=" * (4 - missing_padding)
-                
-                # 4. 구글 표준 형식(64자 줄바꿈)으로 재조립
-                formatted_key = header + "\n"
-                for i in range(0, len(inner_key), 64):
-                    formatted_key += inner_key[i:i+64] + "\n"
-                formatted_key += footer
-                
-                creds_info["private_key"] = formatted_key
+                # [필살기] 모든 특수 쓰레기 문자 제거 로직
+                # 1. 헤더와 푸터 사이의 내용만 추출
+                match = re.search(r'-----BEGIN PRIVATE KEY-----(.*)-----END PRIVATE KEY-----', pk, re.DOTALL)
+                if match:
+                    inner_content = match.group(1)
+                    # 2. 알파벳, 숫자, +, /, = 이외의 모든 문자(특수문자, 따옴표, 줄바꿈 등)를 제거
+                    clean_inner = re.sub(r'[^A-Za-z0-9\+/=]', '', inner_content)
+                    # 3. 깨끗한 본문으로 재조립
+                    creds_info["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{clean_inner}\n-----END PRIVATE KEY-----\n"
 
             creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         elif os.path.exists("google_keys.json"):
@@ -55,11 +42,10 @@ def get_gsheet_client():
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"⚠️ 인증 오류 발생: {e}")
-        st.info("Secrets의 private_key 값이 손상되었을 수 있습니다. JSON 파일의 원본을 다시 복사해보세요.")
+        st.info("비밀키 데이터에 읽을 수 없는 문자가 섞여 있습니다. Secrets의 내용을 지우고 메모장에서 다시 복사해보세요.")
         st.stop()
 
-# --- 이하 load_data_from_gsheet, save_to_gsheet, 디자인 및 UI 로직은 100% 동일 ---
-# (태완님이 요청하신 기존의 모든 디자인과 합계 계산 로직을 그대로 유지합니다.)
+# --- 이하 load_data_from_gsheet 및 모든 UI 로직 (이전과 동일하게 유지) ---
 
 def load_data_from_gsheet():
     try:
