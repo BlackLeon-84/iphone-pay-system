@@ -5,24 +5,24 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v2.3.3"
+SW_VERSION = "v2.3.4"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [긴급 수정] 상단 여백 확보 및 디자인 최적화 ---
+# --- [최종 최적화] 상단 여백, 버튼 간격, 이탈 방지 CSS ---
 st.markdown(f"""
     <style>
-    /* 1. 상단 잘림 방지: 헤더 영역 강제 여백 확보 */
+    /* 1. 상단 잘림 방지 및 화면 폭 고정 */
     .block-container {{
         max-width: 450px !important;
-        padding-top: 3.5rem !important; /* 위쪽 여백을 대폭 늘려 잘림 방지 */
+        padding-top: 3.5rem !important; 
         padding-left: 0.8rem !important;
         padding-right: 0.8rem !important;
         margin: auto !important;
     }}
     
-    /* 2. 버전 정보 스타일 */
+    /* 2. 버전 정보 표시 */
     .version-tag {{
         font-size: 10px !important;
         color: #999;
@@ -30,24 +30,28 @@ st.markdown(f"""
         margin-bottom: -10px;
     }}
 
-    /* 3. 가로 배열 유지 (이전 안정 버전 방식) */
+    /* 3. 버튼 이탈 방지: 간격(Gap) 최소화 */
     div[data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
-        gap: 5px !important;
+        gap: 3px !important; /* 버튼 사이 간격을 좁혀서 이탈 방지 */
     }}
     div[data-testid="column"] {{
         flex: 1 1 0% !important;
         min-width: 0px !important;
     }}
 
-    /* 4. 숫자 입력창 최적화 */
+    /* 4. 입력창 및 버튼 사이즈 미세 조정 */
     .stNumberInput {{ min-width: 0px !important; }}
-    div[data-baseweb="input"] {{ min-width: 0px !important; }}
     input {{ font-size: 16px !important; }}
+    .stButton button {{ 
+        width: 100% !important; 
+        padding: 5px 0px !important; 
+        font-size: 11px !important; /* 버튼 글자가 삐져나가지 않게 살짝 축소 */
+    }}
 
-    /* 5. 기타 UI 컴포넌트 */
+    /* 5. 기존 UI 스타일 유지 */
     .weekly-container {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 8px; border-radius: 10px; border: 1px solid #eee; }}
     .incen-log {{ font-size: 11px; color: #666; margin: 8px 0; padding: 6px; background: #fdfdfd; border-radius: 5px; border-left: 3px solid #ddd; }}
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; table-layout: fixed; }}
@@ -115,7 +119,7 @@ if not st.session_state.logged_in:
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     st.stop()
 
-# --- 사이드바 (관리자 메뉴) ---
+# --- 사이드바 ---
 user_name = st.session_state.user_name
 cfg = st.session_state.config
 with st.sidebar:
@@ -178,14 +182,14 @@ if t_c2.button("🌴 휴무 등록", use_container_width=True):
 
 st.divider()
 
-# --- 💰 인센티브 ---
+# --- 💰 인센티브 (날짜/시간 로그 유지) ---
 st.markdown(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
 if st.session_state.incen_history:
     log_items = [f"{h['val']:,}({h['time']})" for h in st.session_state.incen_history]
     st.markdown(f'<div class="incen-log">📋 상세: {" / ".join(log_items)}</div>', unsafe_allow_html=True)
 
 add_amt = st.number_input("금액", min_value=0, step=1000, value=0, label_visibility="collapsed")
-b_c1, b_c2, b_c3 = st.columns(3)
+b_c1, b_c2, b_c3 = st.columns(3) # 추가/취소/리셋
 if b_c1.button("➕ 추가"): 
     st.session_state.current_incen_sum += add_amt
     st.session_state.incen_history.append({"val": add_amt, "time": get_now_kst().strftime("%m/%d %H:%M")})
@@ -215,10 +219,9 @@ if st.button("✅ 최종 저장", type="primary", use_container_width=True):
            "합계": st.session_state.current_incen_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(row): st.success("저장!"); st.rerun()
 
-# --- 📊 리포트 ---
+# --- 📊 리포트 (세부 내역 복구) ---
 st.divider()
 st.subheader("📊 정산 리포트")
-# ... (날짜 로직 동일)
 s_day = cfg['start_day']
 if sel_date.day >= s_day:
     start_dt = date(sel_date.year, sel_date.month, s_day)
@@ -234,7 +237,9 @@ if not df_all.empty:
     if not p_df.empty:
         total_incen = p_df["인센티브"].sum()
         total_extra = p_df["합계"].sum()
+        # [복구] 예상 수령 세부 내역 안내
         st.markdown(f"**🏦 예상 수령: {int(cfg['base_salary'] + total_extra - cfg['insurance']):,}원**")
+        st.caption(f"(기본 {cfg['base_salary']:,} + 추가 {total_extra:,} - 보험 {cfg['insurance']:,})")
         
         headers = ["날", "인센"] + [n[:1] for n in cfg["item_names"]] + ["합계"]
         rows_html = ""
@@ -250,6 +255,7 @@ if not df_all.empty:
                 rows_html += f"<td style='color:blue;'>{int(r['합계']):,}</td>"
             rows_html += "</tr>"
         
+        # [유지] 합계 행
         rows_html += f"<tr class='total-row'><td>합</td><td>{total_incen:,}</td>"
         for s in item_sums: rows_html += f"<td>{s}</td>"
         rows_html += f"<td>{total_extra:,}</td></tr>"
