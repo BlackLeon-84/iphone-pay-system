@@ -1,0 +1,17 @@
+name: Streamlit-AI-Agent
+on: [push] # 코드가 업데이트될 때마다 실행
+
+jobs:
+  check-code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Run Test
+        run: |
+          # 여기에 에러를 체크하는 명령어를 넣습니다.
+          # 예: python -m py_compile app.py (문법 오류 체크)
+          python -m py_compile app.py
