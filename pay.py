@@ -2,9 +2,23 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
 import sqlite3
+import re
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.2.3", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.2.4", layout="centered")
+
+# --- 유틸리티: 숫자에 콤마 넣기/빼기 ---
+def format_comma(val):
+    try:
+        return "{:,}".format(int(str(val).replace(",", "")))
+    except:
+        return "0"
+
+def parse_int(val):
+    try:
+        return int(re.sub(r'[^0-9]', '', str(val)))
+    except:
+        return 0
 
 # --- 데이터베이스 및 기본 설정 ---
 def get_connection():
@@ -13,15 +27,12 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    # 1. 실적 데이터
     c.execute('''CREATE TABLE IF NOT EXISTS salary
                  (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 일반필름 INTEGER, 
                   풀필름 INTEGER, 젤리 INTEGER, 케이블 INTEGER, 어댑터 INTEGER, 
                   합계 INTEGER, 비고 TEXT, PRIMARY KEY(직원명, 날짜))''')
-    # 2. 직원별 개별 품목 설정
     c.execute('''CREATE TABLE IF NOT EXISTS settings_v3
                  (직원명 TEXT, id TEXT, display_name TEXT, price INTEGER, PRIMARY KEY(직원명, id))''')
-    # 3. 직원별 급여 환경 설정 (보험료/공제액 컬럼 추가)
     try:
         c.execute("ALTER TABLE staff_configs ADD COLUMN insurance INTEGER DEFAULT 104760")
     except:
@@ -33,7 +44,7 @@ def init_db():
 
 init_db()
 
-# --- 데이터 로드/저장 함수 ---
+# --- 데이터 로드 함수 ---
 def load_user_settings(name):
     conn = get_connection()
     df = pd.read_sql("SELECT * FROM settings_v3 WHERE 직원명 = ?", conn, params=(name,))
@@ -91,28 +102,25 @@ with st.sidebar:
             st.subheader(f"📦 {target_staff} 품목 및 단가")
             for i, row in user_settings.iterrows():
                 n_name = st.text_input(f"품목{i+1} 이름", value=row['display_name'], key=f"it_n_{target_staff}_{row['id']}")
-                n_price = st.number_input(f"{n_name} 단가", value=int(row['price']), step=1000, key=f"it_p_{target_staff}_{row['id']}")
-                st.caption(f"확인: {n_price:,}원") # 입력값 확인용 콤마 텍스트
-                new_items.append((n_name, n_price, target_staff, row['id']))
+                # 콤마 처리를 위해 text_input 사용
+                p_val = st.text_input(f"{n_name} 단가", value=format_comma(row['price']), key=f"it_p_{target_staff}_{row['id']}")
+                new_items.append((n_name, parse_int(p_val), target_staff, row['id']))
             
             st.divider()
             st.subheader(f"💰 {target_staff} 급여 환경")
-            new_base = st.number_input("기본급", value=int(config['base_salary']), step=10000)
-            st.caption(f"확인: {new_base:,}원")
-            
-            new_insurance = st.number_input("보험료(공제액)", value=int(config['insurance']), step=1000)
-            st.caption(f"확인: {new_insurance:,}원")
-            
+            b_val = st.text_input("기본급", value=format_comma(config['base_salary']))
+            i_val = st.text_input("보험료(공제액)", value=format_comma(config['insurance']))
             new_start = st.number_input("정산 시작일", value=int(config['start_day']), min_value=1, max_value=28)
             
             if st.form_submit_button(f"{target_staff} 설정 전체 저장"):
                 conn = get_connection()
                 c = conn.cursor()
                 c.executemany("UPDATE settings_v3 SET display_name=?, price=? WHERE 직원명=? AND id=?", new_items)
-                c.execute("INSERT OR REPLACE INTO staff_configs VALUES (?, ?, ?, ?)", (target_staff, new_base, new_start, new_insurance))
+                c.execute("INSERT OR REPLACE INTO staff_configs VALUES (?, ?, ?, ?)", 
+                          (target_staff, parse_int(b_val), new_start, parse_int(i_val)))
                 conn.commit()
                 conn.close()
-                st.success(f"변경 완료!")
+                st.success(f"설정 저장 완료!")
                 st.rerun()
     else:
         st.info("✅ 로그인 중: " + user_name)
@@ -127,7 +135,7 @@ item_names = current_user_settings['display_name'].tolist()
 item_prices = current_user_settings['price'].tolist()
 my_config = load_staff_config(user_name)
 
-# --- CSS (1.0 디자인 유지) ---
+# --- CSS (디자인 유지) ---
 st.markdown("""
     <style>
     .version-text { font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }
@@ -139,7 +147,7 @@ st.markdown("""
     .report-table th { background-color: #f8f9fa; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
-st.markdown('<p class="version-text">v1.2.3-stable</p>', unsafe_allow_html=True)
+st.markdown('<p class="version-text">v1.2.4-stable</p>', unsafe_allow_html=True)
 
 # 1. 상단 실적 입력
 st.write(f"### 💼 {user_name}님 실적")
@@ -216,7 +224,7 @@ if st.button("✅ 최종 실적 저장", use_container_width=True, type="primary
     st.success("저장 완료!")
     st.rerun()
 
-# 5. 정산 리포트 (보험료 설정 반영)
+# 정산 리포트
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day = my_config['start_day']
