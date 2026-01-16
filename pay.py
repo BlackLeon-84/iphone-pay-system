@@ -5,7 +5,7 @@ import sqlite3
 import re
 
 # 소프트웨어 버전
-SW_VERSION = "v1.4.4"
+SW_VERSION = "v1.4.5"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
@@ -43,7 +43,6 @@ def init_db():
                   item7 INTEGER DEFAULT 0, 합계 INTEGER, 비고 TEXT, 
                   입력시간 TEXT, PRIMARY KEY(직원명, 날짜))''')
     
-    # 기존 테이블 구조 유지 및 누락 컬럼 확인
     cursor = c.execute("PRAGMA table_info(salary)")
     cols = [row[1] for row in cursor.fetchall()]
     if '입력시간' not in cols:
@@ -158,13 +157,15 @@ st.markdown("""
     .report-table { width: 100%; font-size: 11px; text-align: center; border-collapse: collapse; background: white; }
     .report-table th, .report-table td { border: 1px solid #eee; padding: 8px 4px; white-space: nowrap; }
     .report-table th { background-color: #f8f9fa; color: #333; }
+    .total-row { background-color: #f1f8e9; font-weight: bold; }
+    .calc-detail { font-size: 14px; color: #555; line-height: 1.6; background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px dashed #ccc; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
 st.caption(f"Software Version: {SW_VERSION}")
 st.write(f"### 💼 {user_name}님 실적")
 
-# 1. 날짜 선택 및 초기화 로직
+# 1. 날짜 선택
 t_c1, t_c2 = st.columns([1.2, 0.8])
 sel_date = t_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
@@ -175,7 +176,7 @@ if st.session_state.last_date != str_date:
     st.session_state.incen_history = []
     st.session_state.last_date = str_date
 
-# 📅 7일 등록 현황 (디자인 유지)
+# 📅 7일 등록 현황
 st.write("**📅 최근 7일 현황**")
 weekly_html = '<div class="weekly-container">'
 today_kst = get_now_kst().date()
@@ -189,7 +190,6 @@ for i in range(6, -1, -1):
 weekly_html += '</div>'
 st.markdown(weekly_html, unsafe_allow_html=True)
 
-# 실적 등록 상태 표시
 existing_row = df_all[df_all["날짜"] == str_date]
 is_edit = not existing_row.empty
 
@@ -226,7 +226,6 @@ if st.session_state.incen_history:
 
 add_amt = st.number_input("금액 입력", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
-# 🔘 인센티브 조작 버튼 (가로 정렬)
 b_c1, b_c2, b_c3 = st.columns(3)
 if b_c1.button("➕ 추가"): 
     st.session_state.current_incen_sum += add_amt
@@ -234,7 +233,6 @@ if b_c1.button("➕ 추가"):
 if b_c2.button("↩️ 취소") and st.session_state.incen_history: 
     st.session_state.current_incen_sum -= st.session_state.incen_history.pop(); st.rerun()
 
-# 🧹 리셋 버튼: 화면 초기화 + DB 즉시 업데이트 (0원으로 변경)
 if b_c3.button("🧹 리셋"): 
     st.session_state.current_incen_sum = 0
     st.session_state.incen_history = []
@@ -281,13 +279,27 @@ else:
 p_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
 
 if not p_df.empty:
+    total_incen = p_df["인센티브"].sum()
     total_extra = p_df["합계"].sum()
+    total_items = [p_df[f"item{i}"].sum() for i in range(1, 8)]
     final_pay = int(my_config['base_salary'] + total_extra - my_config['insurance'])
-    st.info(f"📅 {start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')}")
+    
+    st.info(f"📅 정산기간: {start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')}")
+    
+    # [수정] 상세 내역 표시
+    st.markdown(f"""
+    <div class="calc-detail">
+        ➕ 기본급여: {my_config['base_salary']:,}원<br>
+        ➕ 인센/품목 합계: {total_extra:,}원<br>
+        ➖ 보험료 제외: {my_config['insurance']:,}원
+    </div>
+    """, unsafe_allow_html=True)
     st.markdown(f"### **🏦 실수령 예상: {final_pay:,}원**")
     
+    # [수정] 표 구성 및 하단 합계 추가
     headers = ["날짜", "인센"] + [n[:2] for n in item_names] + ["합계"]
     h_html = "".join([f"<th>{h}</th>" for h in headers])
+    
     rows_html = ""
     for _, r in p_df.iterrows():
         is_h = r['비고'] == "휴무"
@@ -299,4 +311,21 @@ if not p_df.empty:
             for i in range(1, 8): rows_html += f"<td>{int(r[f'item{i}'])}</td>"
             rows_html += f'<td style="font-weight:bold; color:blue;">{int(r["합계"]):,}</td>'
         rows_html += "</tr>"
-    st.markdown(f'<div style="overflow-x:auto;"><table class="report-table"><tr>{h_html}</tr>{rows_html}</table></div>', unsafe_allow_html=True)
+    
+    # [추가] 하단 합계 행(Total Row)
+    total_row_html = f"""
+    <tr class="total-row">
+        <td>합계</td>
+        <td>{total_incen:,}</td>
+        <td>{total_items[0]}</td>
+        <td>{total_items[1]}</td>
+        <td>{total_items[2]}</td>
+        <td>{total_items[3]}</td>
+        <td>{total_items[4]}</td>
+        <td>{total_items[5]}</td>
+        <td>{total_items[6]}</td>
+        <td style="color:blue;">{total_extra:,}</td>
+    </tr>
+    """
+    
+    st.markdown(f'<div style="overflow-x:auto;"><table class="report-table"><tr>{h_html}</tr>{rows_html}{total_row_html}</table></div>', unsafe_allow_html=True)
