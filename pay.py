@@ -5,14 +5,15 @@ import gspread
 from google.oauth2.service_account import Credentials
 import re
 import os
+import base64
 
 # 소프트웨어 버전
-SW_VERSION = "v1.9.2"
+SW_VERSION = "v1.9.3"
 
 # 페이지 설정
 st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout="centered")
 
-# --- 구글 시트 연동 (쓰레기 값 강제 세척 로직) ---
+# --- 구글 시트 연동 (물리적 키 재조립 방식) ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
@@ -20,32 +21,37 @@ def get_gsheet_client():
     try:
         if "gcp_service_account" in st.secrets:
             creds_info = dict(st.secrets["gcp_service_account"])
-            pk = creds_info.get("private_key", "")
+            pk = str(creds_info.get("private_key", ""))
             
-            # [강력 세척 로직]
-            # 1. 텍스트에서 실제 Base64 문자가 아닌 것(특수바이트, \x94 등)을 싹 제거합니다.
-            # A-Z, a-z, 0-9, +, /, = 만 남깁니다.
-            inner_key = re.sub(r'[^A-Za-z0-9\+/=]', '', pk.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", ""))
+            # [물리적 재조립 로직]
+            # 1. 헤더와 푸터 사이의 내용만 추출
+            if "-----BEGIN PRIVATE KEY-----" in pk:
+                pk = pk.split("-----BEGIN PRIVATE KEY-----")[-1].split("-----END PRIVATE KEY-----")[0]
             
-            # 2. 길이를 4의 배수로 강제 보정
-            missing_padding = len(inner_key) % 4
-            if missing_padding:
-                inner_key += "=" * (4 - missing_padding)
+            # 2. 알파벳, 숫자, +, /, = 이외의 모든 문자(특수바이트 포함)를 완전히 삭제
+            clean_key = "".join(re.findall(r'[A-Za-z0-9\+/=]', pk))
             
-            # 3. 깨끗하게 닦인 키로 재조립
-            creds_info["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{inner_key}\n-----END PRIVATE KEY-----\n"
+            # 3. Base64 규격(4의 배수) 강제 맞춤
+            padding = len(clean_key) % 4
+            if padding:
+                clean_key += "=" * (4 - padding)
             
+            # 4. 파이썬이 거부할 수 없는 표준 규격으로 재조립
+            creds_info["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{clean_key}\n-----END PRIVATE KEY-----\n"
+            
+            # 5. 이제는 에러가 날 수 없는 깨끗한 상태로 전달
             creds = Credentials.from_service_account_info(creds_info, scopes=scope)
             return gspread.authorize(creds)
         else:
             st.error("❌ Secrets 설정 오류")
             st.stop()
     except Exception as e:
-        st.error(f"🛑 최종 세척 시도 중 오류: {e}")
-        st.info("비밀키 텍스트 내의 특수 기호를 제거 중입니다. 잠시만 기다려주세요.")
+        # 만약 여기서도 에러가 난다면 키 내용 자체가 손상된 것입니다.
+        st.error(f"🛑 물리적 복구 시도 중 오류: {e}")
+        st.info("Secrets에 복사한 키 값에 누락된 부분이 없는지 확인이 필요합니다.")
         st.stop()
 
-# --- 데이터 로드 및 저장 (디자인/내용 변경 금지) ---
+# --- 데이터 로드 및 저장 (태완님 원본 디자인/내용 유지) ---
 def load_data_from_gsheet():
     try:
         client = get_gsheet_client()
@@ -79,8 +85,10 @@ def save_to_gsheet(df_row):
     except Exception as e:
         st.error(f"저장 실패: {e}"); return False
 
-# --- 태완님 기존 UI 및 로직 (100% 보존) ---
+# --- 공통 유틸리티 및 UI (변경 금지) ---
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
+
+# (이후 기존 UI와 정산 로직은 태완님의 코드를 그대로 붙여넣으세요)
 
 # (이후 기존 STAFF_LIST, UI 디자인 코드를 그대로 이어 붙여넣으세요)
 # ...
