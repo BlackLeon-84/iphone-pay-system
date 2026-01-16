@@ -5,7 +5,7 @@ import sqlite3
 import re
 
 # 페이지 설정
-st.set_page_config(page_title="아이폰 정산 시스템 v1.3.1", layout="centered")
+st.set_page_config(page_title="아이폰 정산 시스템 v1.3.3", layout="centered")
 
 # --- 유틸리티 함수 ---
 def format_comma(val):
@@ -29,39 +29,38 @@ def add_log(msg):
     if len(st.session_state.admin_logs) > 5:
         st.session_state.admin_logs.pop()
 
-# --- 데이터베이스 강제 초기화 및 설정 ---
+# --- 데이터베이스 설정 (7개 항목 최적화) ---
 def get_connection():
     return sqlite3.connect("data.db", check_same_thread=False)
 
-def init_db_hard_reset():
+def init_db():
     conn = get_connection()
     c = conn.cursor()
+    # 실적 테이블 (7개 항목 규격)
+    c.execute('''CREATE TABLE IF NOT EXISTS salary
+                 (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 
+                  item1 INTEGER DEFAULT 0, item2 INTEGER DEFAULT 0, item3 INTEGER DEFAULT 0, 
+                  item4 INTEGER DEFAULT 0, item5 INTEGER DEFAULT 0, item6 INTEGER DEFAULT 0, 
+                  item7 INTEGER DEFAULT 0, 합계 INTEGER, 비고 TEXT, PRIMARY KEY(직원명, 날짜))''')
     
-    # [주의] 기존 테이블 삭제 후 새 규격으로 재생성 (ValueError 근본 해결)
-    # 한 번만 실행하면 되므로, 만약 기존 item1~5 방식이라면 삭제 후 재생성합니다.
+    # 7개 항목이 아닐 경우 컬럼 강제 추가 (ValueError 방지)
     cursor = c.execute("PRAGMA table_info(salary)")
     cols = [row[1] for row in cursor.fetchall()]
-    
-    # 만약 'item6'이 없거나 구형 방식이면 삭제 후 새로 만듭니다.
-    if 'item6' not in cols:
-        c.execute("DROP TABLE IF EXISTS salary")
-        c.execute('''CREATE TABLE salary
-                     (직원명 TEXT, 날짜 TEXT, 인센티브 INTEGER, 
-                      item1 INTEGER, item2 INTEGER, item3 INTEGER, item4 INTEGER, 
-                      item5 INTEGER, item6 INTEGER, item7 INTEGER, 
-                      합계 INTEGER, 비고 TEXT, PRIMARY KEY(직원명, 날짜))''')
-        add_log("⚙️ 시스템: 데이터베이스 구조 초기화 완료")
+    for i in range(1, 8):
+        if f'item{i}' not in cols:
+            try: c.execute(f"ALTER TABLE salary ADD COLUMN item{i} INTEGER DEFAULT 0")
+            except: pass
 
     c.execute('''CREATE TABLE IF NOT EXISTS settings_v3
                  (직원명 TEXT, id TEXT, display_name TEXT, price INTEGER, PRIMARY KEY(직원명, id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS staff_configs
-                 (직원명 TEXT PRIMARY KEY, base_salary INTEGER, start_day INTEGER, insurance INTEGER)''')
+                 (직원명 TEXT PRIMARY KEY, base_salary INTEGER, start_day INTEGER, insurance INTEGER)'' )
     conn.commit()
     conn.close()
 
-init_db_hard_reset()
+init_db()
 
-# --- 데이터 로드 함수 ---
+# --- 데이터 로드 ---
 def load_user_settings(name):
     conn = get_connection()
     df = pd.read_sql("SELECT * FROM settings_v3 WHERE 직원명 = ?", conn, params=(name,))
@@ -94,59 +93,68 @@ if not st.session_state.logged_in:
         user_id = st.selectbox("직원 선택", options=STAFF_LIST)
         admin_pw = st.text_input("비밀번호", type="password") if user_id == "태완" else ""
         if st.form_submit_button("입장하기", use_container_width=True):
-            if user_id == "태완" and admin_pw != "102030": st.error("비밀번호가 틀렸습니다.")
+            if user_id == "태완" and admin_pw != "102030": st.error("비밀번호 틀림")
             else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     st.stop()
 
 user_name = st.session_state.user_name
 
-# --- 사이드바 (관리 로그 포함) ---
+# --- 사이드바 (설정창 분리) ---
 with st.sidebar:
     st.header("⚙️ 시스템 관리")
     if user_name == "태완":
-        target_staff = st.selectbox("👤 설정할 직원 선택", STAFF_LIST)
+        target_staff = st.selectbox("👤 설정 대상 직원", STAFF_LIST)
         user_settings = load_user_settings(target_staff)
         config = load_staff_config(target_staff)
-        new_items = []
-        with st.form(f"admin_form_{target_staff}"):
-            for i, row in user_settings.iterrows():
-                n_name = st.text_input(f"품목{i+1} 이름", value=row['display_name'], key=f"it_n_{target_staff}_{row['id']}")
-                p_val = st.text_input(f"{n_name} 단가", value=format_comma(row['price']), key=f"it_p_{target_staff}_{row['id']}")
-                new_items.append((n_name, parse_int(p_val), target_staff, row['id']))
-            b_val = st.text_input("기본급", value=format_comma(config['base_salary']))
-            i_val = st.text_input("보험료", value=format_comma(config['insurance']))
-            new_start = st.number_input("정산 시작일", 1, 28, int(config['start_day']))
-            if st.form_submit_button(f"{target_staff} 설정 저장"):
-                conn = get_connection(); c = conn.cursor()
-                c.executemany("UPDATE settings_v3 SET display_name=?, price=? WHERE 직원명=? AND id=?", new_items)
-                c.execute("INSERT OR REPLACE INTO staff_configs VALUES (?, ?, ?, ?)", (target_staff, parse_int(b_val), new_start, parse_int(i_val)))
-                conn.commit(); conn.close(); add_log(f"✅ {target_staff} 설정 저장 성공"); st.rerun()
+        
+        # 1. 품목 설정 섹션
+        with st.expander("📦 품목 및 단가 설정", expanded=True):
+            with st.form(f"item_form_{target_staff}"):
+                new_items = []
+                for i, row in user_settings.iterrows():
+                    n_name = st.text_input(f"품목{i+1} 이름", row['display_name'], key=f"n_{target_staff}_{row['id']}")
+                    p_val = st.text_input(f"단가", format_comma(row['price']), key=f"p_{target_staff}_{row['id']}")
+                    new_items.append((n_name, parse_int(p_val), target_staff, row['id']))
+                if st.form_submit_button("품목 저장"):
+                    conn = get_connection(); c = conn.cursor()
+                    c.executemany("UPDATE settings_v3 SET display_name=?, price=? WHERE 직원명=? AND id=?", new_items)
+                    conn.commit(); conn.close(); add_log(f"📦 {target_staff} 품목 수정 완료"); st.rerun()
+
+        # 2. 기본급 및 공제 설정 섹션
+        with st.expander("💰 급여 및 정산 설정", expanded=False):
+            with st.form(f"salary_form_{target_staff}"):
+                b_val = st.text_input("기본급", format_comma(config['base_salary']))
+                i_val = st.text_input("보험료(공제)", format_comma(config['insurance']))
+                new_start = st.number_input("정산 시작일", 1, 28, int(config['start_day']))
+                if st.form_submit_button("급여 설정 저장"):
+                    conn = get_connection(); c = conn.cursor()
+                    c.execute("INSERT OR REPLACE INTO staff_configs VALUES (?, ?, ?, ?)", (target_staff, parse_int(b_val), new_start, parse_int(i_val)))
+                    conn.commit(); conn.close(); add_log(f"💰 {target_staff} 급여 수정 완료"); st.rerun()
+
         if st.session_state.admin_logs:
-            st.markdown("---")
-            st.caption("🕒 **관리 로그 (최근 5건)**")
-            for log in st.session_state.admin_logs: st.code(log, language="text")
+            st.divider()
+            for log in st.session_state.admin_logs: st.code(log)
+    
     if st.button("로그아웃"): st.session_state.logged_in = False; st.rerun()
 
+# 데이터 로드
 current_user_settings = load_user_settings(user_name)
 item_names = current_user_settings['display_name'].tolist()
 item_prices = current_user_settings['price'].tolist()
 my_config = load_staff_config(user_name)
 
-# --- CSS (모바일 2열 유지 및 디자인) ---
+# --- CSS (모바일 2열 유지) ---
 st.markdown("""
     <style>
-    [data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 10px !important; }
+    [data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 8px !important; }
     [data-testid="stHorizontalBlock"] > div { flex: 1 1 calc(50% - 10px) !important; min-width: calc(50% - 10px) !important; }
-    .version-text { font-size: 10px; color: #ccc; text-align: right; }
     .stButton>button { width: 100%; font-weight: bold; }
     .report-table { width: 100%; font-size: 9px; text-align: center; border-collapse: collapse; }
     .report-table th, .report-table td { border: 1px solid #eee; padding: 4px; white-space: nowrap; }
-    .report-table th { background-color: #f8f9fa; }
     </style>
     """, unsafe_allow_html=True)
-st.markdown('<p class="version-text">v1.3.1-stable</p>', unsafe_allow_html=True)
 
-# 1. 상단 실적 입력
+# 실적 입력 부분
 st.write(f"### 💼 {user_name}님 실적")
 top_c1, top_c2 = st.columns(2)
 selected_date = top_c1.date_input("날짜", value=date.today(), label_visibility="collapsed")
@@ -165,7 +173,7 @@ if top_c2.button("🌴 휴무"):
 
 st.divider()
 
-# 인센티브
+# 인센티브 계산 로직
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [int(existing_row.iloc[0]["인센티브"])] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
@@ -178,16 +186,16 @@ if bc1.button("➕ 추가"): st.session_state.current_incen_sum += add_amount; s
 if bc2.button("↩️ 취소") and st.session_state.incen_history: st.session_state.current_incen_sum -= st.session_state.incen_history.pop(); st.rerun()
 if bc3.button("🧹 리셋"): st.session_state.current_incen_sum = 0; st.session_state.incen_history = []; st.rerun()
 
-# 수량 입력 (모바일 가로 2열 고정)
+# 수량 입력 (2열 고정)
 st.write("**📦 품목 수량**")
 counts = []
 for i in range(1, 7, 2):
     c1, c2 = st.columns(2)
     for j, col in enumerate([c1, c2]):
         idx = i + j
-        val = int(existing_row.iloc[0][f'item{idx}']) if is_edit else 0
+        val = int(existing_row.iloc[0][f'item{idx}']) if is_edit and f'item{idx}' in existing_row.columns else 0
         counts.append(col.number_input(item_names[idx-1], 0, value=val, key=f"inp_{idx}"))
-val7 = int(existing_row.iloc[0]['item7']) if is_edit else 0
+val7 = int(existing_row.iloc[0]['item7']) if is_edit and 'item7' in existing_row.columns else 0
 counts.append(st.number_input(item_names[6], 0, value=val7, key="inp_7"))
 
 if st.button("✅ 최종 실적 저장", type="primary"):
@@ -197,11 +205,10 @@ if st.button("✅ 최종 실적 저장", type="primary"):
               (user_name, str_date, st.session_state.current_incen_sum, *counts, total, "정상"))
     conn.commit(); conn.close(); st.success("저장 완료!"); st.rerun()
 
-# 정산 리포트
+# 리포트
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day = my_config['start_day']
-# (정산 기간 계산 로직 생략 - 이전과 동일)
 if selected_date.day >= s_day:
     start_dt = date(selected_date.year, selected_date.month, s_day)
     nm, ny = (selected_date.month+1, selected_date.year) if selected_date.month < 12 else (1, selected_date.year+1)
@@ -217,13 +224,13 @@ if not period_df.empty:
     total_extra = period_df["합계"].sum()
     final_pay = int(my_config['base_salary'] + total_extra - my_config['insurance'])
     st.info(f"📅 정산 기간: {start_dt.strftime('%m/%d')} ~ {end_dt.strftime('%m/%d')}")
-    st.markdown(f"**🏦 실수령 예상: {final_pay:,}원**")
+    st.markdown(f"**🏦 실수령 예상: {final_pay:,}원** (수당: {total_extra:,}원)")
     
     headers = ["날짜", "인센"] + [n[:2] for n in item_names] + ["합계"]
     h_html = "".join([f"<th>{h}</th>" for h in headers])
     rows_html = ""
     for _, r in period_df.iterrows():
-        rows_html += f"<tr><td>{datetime.strptime(r['날짜'], '%Y-%m-%d').day}</td><td>{r['인센티브']:,}</td>"
-        for i in range(1, 8): rows_html += f"<td>{r[f'item{i}']}</td>"
+        rows_html += f"<tr><td>{datetime.strptime(r['날짜'], '%Y-%m-%d').day}일</td><td>{r['인센티브']:,}</td>"
+        for i in range(1, 8): rows_html += f"<td>{r.get(f'item{i}', 0)}</td>"
         rows_html += f"<td>{r['합계']:,}</td></tr>"
     st.markdown(f'<div style="overflow-x:auto;"><table class="report-table"><tr>{h_html}</tr>{rows_html}</table></div>', unsafe_allow_html=True)
