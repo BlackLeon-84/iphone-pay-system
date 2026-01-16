@@ -14,23 +14,33 @@ st.set_page_config(page_title=f"아이폰 정산 시스템 {SW_VERSION}", layout
 # --- 구글 시트 연동 ---
 SHEET_NAME = "아이폰정산"
 
-def get_gsheet_client():
-    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+def save_to_gsheet(df_row):
     try:
-        if "gcp_service_account" in st.secrets:
-            # Secrets에서 깨끗하게 정리된 정보를 가져옵니다.
-            creds_info = dict(st.secrets["gcp_service_account"])
-            # JSON의 \n을 실제 줄바꿈으로 변경
-            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
-            
-            creds = Credentials.from_service_account_info(creds_info, scopes=scope)
-            return gspread.authorize(creds)
+        client = get_gsheet_client()
+        sheet = client.open(SHEET_NAME).sheet1
+        all_data = sheet.get_all_values()
+        name, target_date = df_row['직원명'], df_row['날짜']
+        
+        row_idx = -1
+        # 기존 기록이 있는지 확인
+        for i, row in enumerate(all_data):
+            if len(row) > 1 and row[0] == name and row[1] == target_date:
+                row_idx = i + 1
+                break
+        
+        new_values = list(df_row.values())
+        
+        if row_idx != -1:
+            # 기존 행 업데이트 (이 부분에서 반환값 체크 방식을 단순화했습니다)
+            sheet.update(f"A{row_idx}", [new_values])
         else:
-            st.error("❌ Secrets 설정이 비어있습니다. Streamlit 대시보드 설정을 확인하세요.")
-            st.stop()
+            # 새로운 행 추가
+            sheet.append_row(new_values)
+            
+        return True # 성공 시 무조건 True 반환
     except Exception as e:
-        st.error(f"⚠️ 연결 실패: {e}")
-        st.stop()
+        st.error(f"저장 실패 에러 메시지: {e}")
+        return False
 
 # --- 데이터 로드 및 저장 (기존 디자인/기능 유지) ---
 def load_data_from_gsheet():
