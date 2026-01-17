@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.0.3"
+SW_VERSION = "v3.0.4"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -116,7 +116,8 @@ if "config" not in st.session_state:
 if not st.session_state.logged_in:
     st.title("🔐 로그인")
     user_id = st.selectbox("직원 선택", options=STAFF_LIST)
-    admin_pw = st.input("비번", type="password") if user_id == "태완" else ""
+    # st.input을 st.text_input으로 수정함
+    admin_pw = st.text_input("비번", type="password") if user_id == "태완" else ""
     if st.button("입장"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
@@ -152,7 +153,7 @@ st.write(f"### 💼 {user_name}님 실적")
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
-# --- [복구] 저장 시간 로그 창 ---
+# --- 저장 시간 로그 창 ---
 existing_row = df_all[(df_all["날짜"] == str_date) & (df_all["직원명"] == user_name)] if not df_all.empty else pd.DataFrame()
 if not existing_row.empty:
     save_time = existing_row.iloc[0].get('입력시간', '기록없음')
