@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 import calendar
 
 # 소프트웨어 버전
-SW_VERSION = "v3.3.8"
+SW_VERSION = "v3.3.9"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -105,7 +105,9 @@ def load_staff_salary_config(name):
     data = sheet.get_all_records()
     for row in data:
         if row["직원명"] == name:
-            return {"base_salary": int(row["기본급"]), "start_day": int(row["정산일"]), "insurance": int(row["보험료"])}
+            # 정산일이 31일을 넘어가면 13일로 강제 보정 (데이터 오류 방지)
+            s_day = int(row["정산일"]) if int(row["정산일"]) <= 31 else 13
+            return {"base_salary": int(row["기본급"]), "start_day": s_day, "insurance": int(row["보험료"])}
     default = {"base_salary": 3500000, "start_day": 13, "insurance": 104760}
     sheet.append_row([name, default["base_salary"], default["start_day"], default["insurance"]])
     return default
@@ -116,7 +118,7 @@ def save_staff_salary_config(name, base, day, ins):
     row_idx = -1
     for i, row in enumerate(all_rows):
         if row[0] == name: row_idx = i + 1; break
-    new_data = [name, base, day, ins]
+    new_data = [name, base, int(day), ins]
     if row_idx != -1: sheet.update(range_name=f"A{row_idx}:D{row_idx}", values=[new_data])
     else: sheet.append_row(new_data)
 
@@ -152,9 +154,8 @@ def save_to_gsheet(user_name, df_row):
     except: return False
 
 def get_safe_date(year, month, day):
-    """해당 월의 마지막 날을 넘지 않는 안전한 날짜 생성"""
     last_day = calendar.monthrange(year, month)[1]
-    return date(year, month, min(day, last_day))
+    return date(year, month, min(int(day), last_day))
 
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
@@ -176,7 +177,7 @@ if not st.session_state.logged_in:
             st.session_state.user_name = user_id
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 정산 날짜 ValueError 오류 완벽 해결<br>• 월별 말일 자동 감지 로직 추가<br>• 기존 아이폰 최적화 레이아웃 보존</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 정산 시작일 범위 고정 (1~31일)<br>• 정산 리포트 날짜 계산 로직 강화<br>• 아이폰 최적화 레이아웃 보존</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name = st.session_state.user_name
@@ -199,8 +200,10 @@ with st.sidebar:
             p = c2.number_input(f"가격{i+1}", value=t_cfg["item_prices"][i], step=1000, key=f"sp_{target_staff}_{i}")
             new_names.append(n); new_prices.append(p)
             
+        st.divider()
         base = st.number_input("기본급", value=t_sal["base_salary"])
-        s_day = st.slider("정산 시작일", 1, 31, t_sal["start_day"])
+        # 정산 시작일 범위를 1~31로 엄격히 제한
+        s_day = st.slider("정산 시작일 (1~31)", 1, 31, value=min(max(1, t_sal["start_day"]), 31))
         ins = st.number_input("보험료", value=t_sal["insurance"])
         
         if st.button(f"💿 {target_staff} 설정 저장", use_container_width=True):
@@ -286,15 +289,15 @@ st.divider()
 st.subheader("📊 정산 리포트")
 s_day, base, ins = sal_cfg['start_day'], sal_cfg['base_salary'], sal_cfg['insurance']
 
-# 안전한 날짜 계산 로직 적용
+# 한 달 정산 기간 계산
 if sel_date.day >= s_day:
     start_dt = get_safe_date(sel_date.year, sel_date.month, s_day)
 else:
     prev_month_date = sel_date.replace(day=1) - timedelta(days=1)
     start_dt = get_safe_date(prev_month_date.year, prev_month_date.month, s_day)
 
-end_dt = (start_dt + timedelta(days=32)).replace(day=1) # 다음달 1일로 일단 이동
-end_dt = get_safe_date(end_dt.year, end_dt.month, s_day) - timedelta(days=1)
+next_month_date = (start_dt + timedelta(days=32)).replace(day=1)
+end_dt = get_safe_date(next_month_date.year, next_month_date.month, s_day) - timedelta(days=1)
 
 if not df_all.empty:
     p_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
