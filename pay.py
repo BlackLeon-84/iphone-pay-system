@@ -280,9 +280,29 @@ if "inc_input_field" not in st.session_state: st.session_state.inc_input_field =
 if st.session_state.current_date != str_date:
     st.session_state.current_date = str_date
     ext_data = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
-    # 상태 강제 업데이트
-    st.session_state.inc_sum = safe_int(ext_data.iloc[0]["인센티브"]) if not ext_data.empty else 0
-    st.session_state.inc_his = [{"val": safe_int(ext_data.iloc[0]["인센티브"])}] if not ext_data.empty and safe_int(ext_data.iloc[0]["인센티브"]) > 0 else []
+    
+    # 상태 강제 업데이트: '비고' 란에서 상세 내역 파싱 (format: "메모 | 10000+20000")
+    inc_val = safe_int(ext_data.iloc[0]["인센티브"]) if not ext_data.empty else 0
+    st.session_state.inc_sum = inc_val
+    
+    # 상세 내역 복원 로직
+    restored_his = []
+    if not ext_data.empty:
+        remark = str(ext_data.iloc[0]["비고"])
+        if "|" in remark:
+            try:
+                 # "정상 | 10000+20000" -> "10000+20000"
+                 hist_str = remark.split("|")[-1].strip()
+                 if hist_str:
+                     restored_his = [{"val": safe_int(x)} for x in hist_str.split("+") if x.strip()]
+            except: pass
+    
+    # 복원된 내역이 없지만 합계가 있다면 (구버전 데이터 호환) -> 합계 1개로 처리
+    if not restored_his and inc_val > 0:
+        restored_his = [{"val": inc_val}]
+        
+    st.session_state.inc_his = restored_his
+        
     st.session_state.inc_input_field = 0 # 입력필드 리셋
     for i in range(7):
         val = safe_int(ext_data.iloc[0][f"item{i+1}"]) if not ext_data.empty else 0
@@ -418,7 +438,16 @@ st.number_input(it_n[6], 0, key="it_input_6")
 if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
     cts = [st.session_state[f"it_input_{i}"] for i in range(7)]
     tot_val = st.session_state.inc_sum + ov_pay + sum([safe_int(c) * safe_int(p) for c, p in zip(cts, it_p)])
-    row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "시간수당": ov_pay, "퇴근시간": sel_etime, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": tot_val, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
+    
+    # 상세 내역 직렬화 (Serialize)
+    remark_base = "정상"
+    if st.session_state.inc_his:
+        # 0원 제외하고 저장
+        valid_vals = [str(item['val']) for item in st.session_state.inc_his if item['val'] != 0]
+        if valid_vals:
+            remark_base += " | " + "+".join(valid_vals)
+            
+    row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "시간수당": ov_pay, "퇴근시간": sel_etime, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": tot_val, "비고": remark_base, "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row):
         st.session_state.sv_msg = f"✅ 데이터가 성공적으로 저장되었습니다! ({get_now_kst().strftime('%H:%M:%S')})"
         st.rerun()
