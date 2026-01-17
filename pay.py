@@ -8,7 +8,7 @@ import time
 import hashlib
 
 # --- 상수 및 설정 ---
-SW_VERSION = "v4.4.0"
+SW_VERSION = "v4.5.0"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -273,13 +273,14 @@ if not st.session_state.logged_in:
                 st.error("비밀번호가 일치하지 않습니다.")
 
     st.markdown(f'''
+    st.markdown(f'''
     <div class="admin-log">
         <b>🕒 {get_now_kst().strftime("%Y-%m-%d")} 업데이트 ({SW_VERSION})</b><br>
         <div style="margin-top:5px; line-height:1.4;">
-        • <b>[UI 혁신]</b> '일일 입력'과 '월간 정산' 탭 분리<br>
-        • <b>[기능]</b> 카드 공제 상세 입력(내역별 추가) 기능<br>
-        • <b>[기능]</b> 공제 제외(식대 등) 체크 기능 도입<br>
-        • <b>[수정]</b> 리포트 빈 화면 및 실행 오류 해결
+        • <b>[동기화]</b> 날짜 선택 시 하단 리포트 즉시 자동 변경<br>
+        • <b>[UI]</b> 월간 정산 공제 입력창 기본값 '접힘'으로 변경<br>
+        • <b>[UI]</b> 리포트 기간 표기 방식 깔끔하게 원복<br>
+        • <b>[안내]</b> 업데이트 세부 내역 상시 표시 개선
         </div>
     </div>
     ''', unsafe_allow_html=True); st.stop()
@@ -606,18 +607,28 @@ with tab_daily:
             st_dt = get_safe_date(y, m, safe_int(sal_cfg['start_day'], 13))
         
         ed_dt = get_safe_date((st_dt + timedelta(days=33)).year, (st_dt + timedelta(days=33)).month, safe_int(sal_cfg['start_day'], 13)) - timedelta(days=1)
-        # [Fix] 13일~12일 -> 2월 월급 명시
-        lbl_m = ed_dt.strftime("%Y년 %m월 (월급)") 
+        # [Fix] 13일~12일 -> 2월 월급 명시 (삭제 요청)
+        lbl_m = ed_dt.strftime("%Y년 %m월") 
         d_m_opts.append(lbl_m)
         d_m_ranges.append((st_dt, ed_dt))
 
-    # 2. 날짜 선택(sel_date)에 맞는 월 자동 찾기
-    default_idx = 0
+    # 2. 날짜 선택(sel_date)에 맞는 월 자동 찾기 & 동기화
+    # [Fix] sel_date 변경 시 세션 상태 강제 업데이트
+    if "last_sel_date_for_report" not in st.session_state: 
+        st.session_state.last_sel_date_for_report = sel_date
+
+    curr_idx = 0
     for i, (s, e) in enumerate(d_m_ranges):
-        if s <= sel_date <= e: default_idx = i; break
-    
-    # 3. 선택기 표시
-    sel_r_idx = st.selectbox("리포트 기간 선택", range(len(d_m_opts)), index=default_idx, format_func=lambda x: d_m_opts[x], key="daily_report_month")
+        if s <= sel_date <= e: curr_idx = i; break
+
+    # 날짜가 실제로 바뀌었으면 리포트 선택 인덱스도 강제 변경
+    if st.session_state.last_sel_date_for_report != sel_date:
+        st.session_state.daily_report_month = curr_idx
+        st.session_state.last_sel_date_for_report = sel_date
+
+    # 3. 선택기 표시 (동기화된 index 사용)
+    # key가 있으면 index param은 초기 로드에만 영향을 줌. 따라서 위에서 직접 session_state를 수정해야 함.
+    sel_r_idx = st.selectbox("리포트 기간 선택", range(len(d_m_opts)), index=curr_idx, format_func=lambda x: d_m_opts[x], key="daily_report_month")
     
     # 4. 렌더링
     r_s_dt, r_e_dt = d_m_ranges[sel_r_idx]
@@ -655,8 +666,7 @@ with tab_report:
             st_dt = get_safe_date(y, m, s_d)
         
         ed_dt = get_safe_date((st_dt + timedelta(days=33)).year, (st_dt + timedelta(days=33)).month, s_d) - timedelta(days=1)
-        # [Fix] 13일~12일 -> 2월 월급 명시
-        lbl_m = ed_dt.strftime("%Y년 %m월 (월급)")
+        lbl_m = ed_dt.strftime("%Y년 %m월") # [Fix] "(월급)" 제거
         m_opts.append(lbl_m)
         m_ranges.append((st_dt, ed_dt))
 
@@ -666,7 +676,7 @@ with tab_report:
     # [Fix] Duplicate period display removed (Handled by render_monthly_report)
 
     # 월 공제 항목 입력 기능 (카드 상세 포함)
-    with st.expander("💳 공제 항목 입력 (매장현금, 카드상세, 기타)", expanded=True):
+    with st.expander("💳 공제 항목 입력 (매장현금, 카드상세, 기타)", expanded=False): # [Fix] 기본 접힘
         ed_str = e_dt.strftime("%Y-%m-%d")
         last_row = df_all[df_all["날짜"] == ed_str] if not df_all.empty else pd.DataFrame()
         
