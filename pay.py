@@ -539,18 +539,16 @@ if not df_all.empty:
         final_pay = int(b + total_sum_val - ins - t_cash); combined_inc = t_inc + t_items + t_ov
         
         
-        # 리포트 요약 카드
-        st.markdown(f"""
-        <div class="calc-detail">
-            <div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div>
-            <div class="calc-line"><span>인센티브 (시간수당 포함)</span> <span>+ {combined_inc:,}원</span></div>
-            <div class="calc-line" style="color:red;"><span>보험료</span> <span>- {ins:,}원</span></div>
-            {f'<div class="calc-line" style="color:#ef6c00;"><span>현금 수령 (가불/선지급)</span> <span>- {t_cash:,}원</span></div>' if t_cash > 0 else ''}
-            <div class="calc-total">
-                <div class="calc-line"><span>💰 실 수령액</span> <span>{final_pay:,}원</span></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # 리포트 요약 카드 HTML 생성 (마크다운 인덴트 오류 방지)
+        summary_html = f'<div class="calc-detail">'
+        summary_html += f'<div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div>'
+        summary_html += f'<div class="calc-line"><span>인센티브 (시간수당 포함)</span> <span>+ {combined_inc:,}원</span></div>'
+        summary_html += f'<div class="calc-line" style="color:red;"><span>보험료</span> <span>- {ins:,}원</span></div>'
+        if t_cash > 0:
+            summary_html += f'<div class="calc-line" style="color:#ef6c00;"><span>현금 수령 (가불/선지급)</span> <span>- {t_cash:,}원</span></div>'
+        summary_html += f'<div class="calc-total"><div class="calc-line"><span>💰 실 수령액</span> <span>{final_pay:,}원</span></div></div>'
+        summary_html += '</div>'
+        st.markdown(summary_html, unsafe_allow_html=True)
         h_base = ["날짜", "인센"] + (["수당"] if is_ov_staff else []); hds = h_base + [n[:2] for n in it_n] + ["합계"]
         r_html, i_sums = "", [0]*7
         for _, r in p_df.iterrows():
