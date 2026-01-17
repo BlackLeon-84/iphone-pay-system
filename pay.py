@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.1.6"
+SW_VERSION = "v3.1.7"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -13,7 +13,6 @@ st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 # --- [v3.0.8 기반] 아이폰 최적화 CSS ---
 st.markdown(f"""
     <style>
-    /* 1. 전체 여백 및 기본 스타일 */
     .block-container {{
         padding-top: 3.5rem !important;
         max-width: 450px !important;
@@ -24,7 +23,7 @@ st.markdown(f"""
     hr {{ border: 0; height: 1px; background: #eee; margin: 15px 0; }}
     div[data-baseweb="base-input"] {{ border: none !important; background-color: #f1f3f5 !important; border-radius: 8px !important; }}
 
-    /* 2. 인센티브 버튼 세로 배치 (에러 방지용) */
+    /* 인센티브 버튼 세로 배치 */
     .st-key-incen_buttons button {{
         width: 100% !important;
         margin-bottom: 5px !important;
@@ -33,7 +32,6 @@ st.markdown(f"""
         font-weight: bold !important;
     }}
 
-    /* 3. 로그인 및 강조 스타일 */
     .st-key-login_btn button {{
         height: 50px !important;
         font-size: 18px !important;
@@ -42,15 +40,12 @@ st.markdown(f"""
         color: white !important;
     }}
 
-    /* 4. 테이블 및 로그 스타일 */
-    .period-text {{ font-size: 13px; color: #666; font-weight: bold; margin-bottom: 10px; }}
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
     .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     .calc-detail {{ font-size: 11px; color: #888; margin-top: -5px; margin-bottom: 10px; }}
     .incen-log {{ font-size: 11px; color: #666; padding: 8px; background: #fcfcfc; border-radius: 5px; border-left: 3px solid #ddd; margin: 10px 0; }}
     .save-log {{ font-size: 12px; color: #1e88e5; font-weight: bold; margin-bottom: 5px; }}
-    .config-log {{ font-size: 11px; color: #28a745; background: #f0fff4; padding: 8px; border-radius: 5px; margin-top: 10px; border: 1px solid #c6f6d5; }}
     .update-log {{ font-size: 11px; color: #777; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 30px; border: 1px solid #eee; }}
     </style>
     """, unsafe_allow_html=True)
@@ -108,7 +103,6 @@ if "config_dict" not in st.session_state:
         "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
         "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]
     } for name in STAFF_LIST}
-if "admin_log" not in st.session_state: st.session_state.admin_log = []
 
 # --- 로그인 페이지 ---
 if not st.session_state.logged_in:
@@ -123,9 +117,9 @@ if not st.session_state.logged_in:
     st.markdown(f"""
         <div class="update-log">
             <b>🚀 시스템 업데이트 로그 ({now_d})</b><br>
-            • <b>버튼 레이아웃 안정화</b>: 인센티브 버튼을 세로로 배치하여 모바일 에러 방지<br>
-            • <b>관리자 로그 도입</b>: 설정 변경 이력을 사이드바에서 실시간 확인<br>
-            • <b>리포트 날짜 표기</b>: 정산 주기에 맞는 기간 정보를 상단에 명시
+            • <b>최근 7일 기록 복구</b>: 출근 현황 체크 메뉴 재활성화<br>
+            • <b>버튼 레이아웃 최적화</b>: 인센티브 버튼 세로 배치로 클릭 편의성 향상<br>
+            • <b>리포트 정밀화</b>: 정산 주기 및 날짜 표기 기능 보완
         </div>
     """, unsafe_allow_html=True)
     st.stop()
@@ -137,7 +131,6 @@ cfg = st.session_state.config_dict[user_name]
 with st.sidebar:
     st.header("⚙️ 설정")
     if user_name == "태완":
-        st.subheader("🛠️ 관리자 설정")
         target_staff = st.selectbox("수정 대상 직원", STAFF_LIST)
         t_cfg = st.session_state.config_dict[target_staff]
         new_names = []; new_prices = []
@@ -151,12 +144,7 @@ with st.sidebar:
         ins = st.number_input("보험료", value=int(t_cfg["insurance"]))
         if st.button(f"💿 {target_staff} 설정 저장", use_container_width=True):
             st.session_state.config_dict[target_staff].update({"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices})
-            st.session_state.admin_log.insert(0, f"{get_now_kst().strftime('%m-%d %H:%M')} | {target_staff} 저장")
             st.success("설정 저장 완료"); st.rerun()
-        
-        if st.session_state.admin_log:
-            st.markdown(f'<div class="config-log">{"<br>".join(st.session_state.admin_log[:3])}</div>', unsafe_allow_html=True)
-            
     if st.button("로그아웃"): st.session_state.logged_in = False; st.rerun()
 
 st.markdown(f'<div class="version-tag">{SW_VERSION}</div>', unsafe_allow_html=True)
@@ -171,12 +159,25 @@ is_edit = not existing_row.empty
 
 if is_edit:
     st.markdown(f'<div class="save-log">📝 {str_date} {existing_row.iloc[0].get("입력시간", "")} 저장됨</div>', unsafe_allow_html=True)
+else:
+    st.markdown(f'<div style="font-size:12px; color:#999; margin-bottom:5px;">⚪ {str_date}에 저장된 기록이 없습니다.</div>', unsafe_allow_html=True)
 
 if st.button("🌴 오늘 휴무 등록", use_container_width=True):
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.rerun()
 
-# 인센티브 누적 섹션
+# --- [복구] 최근 7일 기록 섹션 ---
+st.write("**📅 최근 7일 기록**")
+weekly_html = '<div style="display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px;">'
+today_kst = get_now_kst().date()
+for i in range(6, -1, -1):
+    target_d = today_kst - timedelta(days=i)
+    target_str = target_d.strftime("%Y-%m-%d")
+    day_data = df_all[df_all["날짜"] == target_str] if not df_all.empty else pd.DataFrame()
+    icon = "✅" if not day_data.empty and day_data.iloc[0]['비고'] != "휴무" else ("🌴" if not day_data.empty else "⚪")
+    weekly_html += f'<div style="text-align:center;"><div style="font-size:10px;">{target_d.day}일</div><div>{icon}</div></div>'
+st.markdown(weekly_html + '</div>', unsafe_allow_html=True)
+
 st.divider()
 if "incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
@@ -189,7 +190,6 @@ if st.session_state.incen_history:
 
 add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
-# 버튼 세로 배치
 with st.container(key="incen_buttons"):
     if st.button("➕ 인센티브 추가"):
         st.session_state.incen_sum += add_amt
@@ -223,7 +223,7 @@ st.subheader("📊 정산 리포트")
 s_day = cfg['start_day']
 start_dt = date(sel_date.year, sel_date.month, s_day) if sel_date.day >= s_day else (date(sel_date.year, sel_date.month, s_day) - timedelta(days=30)).replace(day=s_day)
 end_dt = (start_dt + timedelta(days=32)).replace(day=s_day) - timedelta(days=1)
-st.markdown(f'<div class="period-text">📅 기간: {start_dt.month}/{start_dt.day} ~ {end_dt.month}/{end_dt.day}</div>', unsafe_allow_html=True)
+st.write(f"📅 **기간: {start_dt.month}/{start_dt.day} ~ {end_dt.month}/{end_dt.day}**")
 
 if not df_all.empty:
     p_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
