@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.3.0"
+SW_VERSION = "v3.3.1"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -93,24 +93,25 @@ def get_gsheet_client():
 def get_user_worksheet(user_name):
     client = get_gsheet_client()
     spreadsheet = client.open(SHEET_NAME)
-    try: return spreadsheet.worksheet(user_name)
+    try: 
+        sheet = spreadsheet.worksheet(user_name)
+        if sheet.col_count < 30: sheet.add_cols(30 - sheet.col_count)
+        return sheet
     except:
-        new_sheet = spreadsheet.add_worksheet(title=user_name, rows="1000", cols="25")
-        # 데이터 헤더 + 설정값 저장용 헤더(O열 이후)
-        headers = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간", "", "기본급", "보험료", "시작일", "명칭1", "가격1", "명칭2", "가격2", "명칭3", "가격3", "명칭4", "가격4"]
+        new_sheet = spreadsheet.add_worksheet(title=user_name, rows="1000", cols="30")
+        headers = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간", "", "기본급", "보험료", "시작일", "명칭1", "가격1", "명칭2", "가격2", "명칭3", "가격3", "명칭4", "가격4", "명칭5", "가격5", "명칭6", "가격6", "명칭7", "가격7"]
         new_sheet.append_row(headers)
         return new_sheet
 
 def load_user_config(user_name):
-    """시트의 2행 특정 열에서 설정값을 읽어옴"""
     try:
         sheet = get_user_worksheet(user_name)
         vals = sheet.row_values(2)
-        if len(vals) < 15: raise Exception("Config not found")
+        if len(vals) < 15: raise Exception("No Config")
         return {
             "base_salary": int(vals[14]), "insurance": int(vals[15]), "start_day": int(vals[16]),
-            "item_names": [vals[17], vals[19], vals[21], vals[23], vals[25] if len(vals)>25 else "추가1", "추가2", "추가3"],
-            "item_prices": [int(vals[18]), int(vals[20]), int(vals[22]), int(vals[24]), 0, 0, 0]
+            "item_names": [vals[17], vals[19], vals[21], vals[23], vals[25], vals[27], vals[29]],
+            "item_prices": [int(vals[18]), int(vals[20]), int(vals[22]), int(vals[24]), int(vals[26]), int(vals[28]), int(vals[30])]
         }
     except:
         return {"base_salary": 3500000, "start_day": 13, "insurance": 104760, 
@@ -118,14 +119,19 @@ def load_user_config(user_name):
                 "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]}
 
 def save_user_config_to_sheet(user_name, cfg):
-    """시트 2행의 특정 열에 설정값 저장"""
     sheet = get_user_worksheet(user_name)
-    # O열(15번째)부터 시작
-    config_vals = [cfg["base_salary"], cfg["insurance"], cfg["start_day"], 
-                   cfg["item_names"][0], cfg["item_prices"][0], cfg["item_names"][1], cfg["item_prices"][1],
-                   cfg["item_names"][2], cfg["item_prices"][2], cfg["item_names"][3], cfg["item_prices"][3]]
-    for i, val in enumerate(config_vals):
-        sheet.update_cell(2, 15 + i, val)
+    # 2행 O열(15번째)부터 값을 한 번에 업데이트
+    config_row = [
+        cfg["base_salary"], cfg["insurance"], cfg["start_day"], 
+        cfg["item_names"][0], cfg["item_prices"][0], 
+        cfg["item_names"][1], cfg["item_prices"][1],
+        cfg["item_names"][2], cfg["item_prices"][2], 
+        cfg["item_names"][3], cfg["item_prices"][3],
+        cfg["item_names"][4], cfg["item_prices"][4],
+        cfg["item_names"][5], cfg["item_prices"][5],
+        cfg["item_names"][6], cfg["item_prices"][6]
+    ]
+    sheet.update(range_name='O2:AE2', values=[config_row])
 
 def load_data_from_gsheet(user_name):
     try:
@@ -165,21 +171,20 @@ if not st.session_state.logged_in:
         else: 
             st.session_state.logged_in = True
             st.session_state.user_name = user_id
-            st.session_state.config = load_user_config(user_id) # 시트에서 설정 불러오기
+            st.session_state.config = load_user_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 급여/품목 설정 시트 영구 저장 적용<br>• 최근 7일 기록 및 아이폰 3열 레이아웃 보존</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• API 에러 수정 및 안정화<br>• 급여/품목 설정 시트 영구 저장 적용<br>• 아이폰 3열 레이아웃 및 7일 기록 유지</div>', unsafe_allow_html=True)
     st.stop()
 
-# --- 사이드바 ---
 user_name = st.session_state.user_name
 cfg = st.session_state.config
 
+# --- 사이드바 ---
 with st.sidebar:
     st.header("⚙️ 설정")
     if user_name == "태완":
         st.subheader("🛠️ 관리자 설정")
         target_staff = st.selectbox("수정 대상 직원", STAFF_LIST)
-        # 대상 직원의 설정을 시트에서 새로 읽어옴
         t_cfg = load_user_config(target_staff) if target_staff != user_name else cfg
         
         new_names = []; new_prices = []
@@ -196,7 +201,7 @@ with st.sidebar:
             updated_cfg = {"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices}
             save_user_config_to_sheet(target_staff, updated_cfg)
             if target_staff == user_name: st.session_state.config = updated_cfg
-            st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] 시트 저장 완료"
+            st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] 저장 완료"
             st.rerun()
         if "admin_log" in st.session_state:
             st.markdown(f'<div class="admin-log">{st.session_state.admin_log}</div>', unsafe_allow_html=True)
