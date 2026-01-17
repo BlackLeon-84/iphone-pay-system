@@ -83,7 +83,7 @@ SHEET_NAME = "아이폰정산"
 ORDERED_STAFF = ["태완", "남근", "성훈", "성욱"]
 SHEET_NAME = "아이폰정산"
 ORDERED_STAFF = ["태완", "남근", "성훈", "성욱"]
-USER_HEADER = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간", "시간수당", "퇴근시간", "현금", "카드", "카드제외", "기타"]
+USER_HEADER = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간", "시간수당", "퇴근시간", "현금", "카드", "카드제외", "기타", "카드상세"]
 
 def safe_int(val, default=0):
     try:
@@ -331,7 +331,9 @@ with tab_daily:
 # --- 탭 2: 월간 정산 ---
 with tab_report:
     st.header("📊 월간 정산 리포트")
+    # [Fix] NameError 방지: 탭 내에서 변수 재정의
     s_d, b, ins = safe_int(sal_cfg['start_day'], 13), safe_int(sal_cfg['base_salary']), safe_int(sal_cfg['insurance'])
+    it_n, it_p = sal_cfg["item_names"], sal_cfg["item_prices"]
     
     # 월별 옵션 생성 (최근 12개월)
     m_opts, m_ranges = [], []
@@ -359,34 +361,79 @@ with tab_report:
     s_dt, e_dt = m_ranges[sel_idx]
     st.markdown(f":grey_exclamation: **정산 기간:** {s_dt.month}월 {s_dt.day}일 ~ {e_dt.month}월 {e_dt.day}일")
 
-    # 월 공제 항목 입력 (매장현금 / 카드 / 기타)
-    with st.expander("💳 공제 항목 입력 (매장현금, 카드, 기타)", expanded=True):
-        # 마지막 날짜(ed_dt)의 데이터 조회
+    # 월 공제 항목 입력 기능 (카드 상세 포함)
+    with st.expander("💳 공제 항목 입력 (매장현금, 카드상세, 기타)", expanded=True):
         ed_str = e_dt.strftime("%Y-%m-%d")
         last_row = df_all[df_all["날짜"] == ed_str] if not df_all.empty else pd.DataFrame()
         
-        # 현재 값 로드
+        # 기본값 로드
         cur_cash = safe_int(last_row.iloc[0]["현금"]) if not last_row.empty and "현금" in last_row.columns else 0
-        cur_card = safe_int(last_row.iloc[0]["카드"]) if not last_row.empty and "카드" in last_row.columns else 0
-        cur_card_ex = safe_int(last_row.iloc[0]["카드제외"]) if not last_row.empty and "카드제외" in last_row.columns else 0
         cur_etc = safe_int(last_row.iloc[0]["기타"]) if not last_row.empty and "기타" in last_row.columns else 0
+        cur_card_detail = str(last_row.iloc[0]["카드상세"]) if not last_row.empty and "카드상세" in last_row.columns else ""
         
+        # 공제 입력 UI
         c1, c2 = st.columns(2)
-        new_cash = c1.number_input("매장 현금", value=cur_cash, step=10000, help="가불, 선지급 등 매장에서 받아간 현금")
+        new_cash = c1.number_input("매장 현금", value=cur_cash, step=10000, help="가불, 선지급 등")
         new_etc = c2.number_input("기타 공제", value=cur_etc, step=10000)
         
         st.markdown("---")
-        st.markdown("**💳 카드 사용 내역**")
-        cc1, cc2 = st.columns(2)
-        new_card = cc1.number_input("카드 총 사용액", value=cur_card, step=10000)
-        new_card_ex = cc2.number_input("↪️ 공제 제외 (식대 등)", value=cur_card_ex, step=10000)
+        st.markdown("**💳 카드 사용 상세 내역**")
         
-        real_card_deduct = new_card - new_card_ex
-        st.caption(f"� 카드 실 공제액: {new_card:,} - {new_card_ex:,} = **{real_card_deduct:,}원**")
+        # 카드 내역 파싱 (Format: "내역__금액__X||내역__금액__O")
+        # 세션 스테이트를 사용하여 입력 관리
+        if "card_items" not in st.session_state or st.session_state.get("last_loaded_card_date") != ed_str:
+             st.session_state.card_items = []
+             if cur_card_detail:
+                 for item in cur_card_detail.split("||"):
+                     if "__" in item:
+                         parts = item.split("__")
+                         st.session_state.card_items.append({"desc": parts[0], "amt": safe_int(parts[1]), "ex": parts[2] == "O"})
+             st.session_state.last_loaded_card_date = ed_str
+
+        # 리스트 출력 및 삭제
+        new_items = []
+        rows_to_del = []
+        for i, item in enumerate(st.session_state.card_items):
+            cc1, cc2, cc3, cc4 = st.columns([2, 1.5, 1, 0.5])
+            cc1.text(item["desc"])
+            cc2.text(f"{item['amt']:,}원")
+            cc3.markdown("☑제외" if item["ex"] else "☐공제")
+            if cc4.button("🗑️", key=f"del_card_{i}"): rows_to_del.append(i)
+        
+        # 삭제 처리
+        for i in sorted(rows_to_del, reverse=True): del st.session_state.card_items[i]
+        if rows_to_del: st.rerun()
+
+        # 신규 추가
+        with st.form("add_card_item"):
+            ac1, ac2, ac3, ac4 = st.columns([2, 1.5, 1, 0.8])
+            n_desc = ac1.text_input("내역", placeholder="예: 식대, 자재")
+            n_amt = ac2.number_input("금액", step=1000)
+            n_ex = ac3.checkbox("제외(식대)", help="체크 시 급여에서 차감되지 않음")
+            if ac4.form_submit_button("추가"):
+                if n_desc and n_amt > 0:
+                    st.session_state.card_items.append({"desc": n_desc, "amt": int(n_amt), "ex": n_ex})
+                    st.rerun()
+
+        # 총액 계산
+        calc_card_total = sum([x["amt"] for x in st.session_state.card_items])
+        calc_card_ex = sum([x["amt"] for x in st.session_state.card_items if x["ex"]])
+        calc_card_real = calc_card_total - calc_card_ex
+        
+        st.caption(f"💡 총 카드: {calc_card_total:,} | 제외: {calc_card_ex:,} | **실 공제: {calc_card_real:,}원**")
         
         if st.button("💾 공제 내역 저장 (정산일 기준)", use_container_width=True):
+            # 상세 내역 직렬화
+            detail_str = "||".join([f"{x['desc']}__{x['amt']}__{'O' if x['ex'] else 'X'}" for x in st.session_state.card_items])
+            
             tgt_row = last_row.iloc[0].to_dict() if not last_row.empty else {"직원명": user_name, "날짜": ed_str, "입력시간": get_now_kst().strftime("%H:%M:%S")}
-            tgt_row.update({"현금": new_cash, "카드": new_card, "카드제외": new_card_ex, "기타": new_etc})
+            tgt_row.update({
+                "현금": new_cash, 
+                "카드": calc_card_total, 
+                "카드제외": calc_card_ex, 
+                "기타": new_etc,
+                "카드상세": detail_str
+            })
             if save_to_gsheet(user_name, tgt_row):
                 st.success("공제 내역이 저장되었습니다!"); time.sleep(1); st.rerun()
 
