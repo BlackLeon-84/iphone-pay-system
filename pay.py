@@ -7,7 +7,7 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.7.2"
+SW_VERSION = "v3.8.0"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -27,11 +27,10 @@ st.markdown(f"""
         padding-left: 5px; border-left: 4px solid #007bff;
     }}
     
-    .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
-        display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; width: 100% !important;
-    }}
+    /* [v3.8.0] 아이폰 버튼 밀림 해결 - Gap 최소화 및 가로폭 확보 */
+    [data-testid="stHorizontalBlock"] {{ gap: 5px !important; }}
     .st-key-incen_buttons button {{
-        font-size: 10px !important; padding: 0px 1px !important; width: 100% !important; min-height: 40px !important;
+        font-size: 11px !important; padding: 0px !important; width: 100% !important; min-height: 42px !important; font-weight: bold !important;
     }}
 
     .admin-log {{ font-size: 11px; color: #155724; background-color: #d4edda; padding: 10px; border-radius: 5px; margin-top: 10px; border: 1px solid #c3e6cb; }}
@@ -43,9 +42,9 @@ st.markdown(f"""
 
     .weekly-box {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px; }}
     
-    /* [v3.7.2] 아이폰 최적화 9px + 타이트한 패딩 */
-    .report-table {{ width: 100%; font-size: 8.8px; text-align: center; border-collapse: collapse; table-layout: fixed; }}
-    .report-table th, .report-table td {{ border: 1px solid #eee; padding: 4.5px 0px; word-break: break-all; letter-spacing: -0.6px; }}
+    /* [v3.8.0] 아이폰 리포트 표 최저 너비 조정 8.5px */
+    .report-table {{ width: 100%; font-size: 8.5px; text-align: center; border-collapse: collapse; table-layout: fixed; }}
+    .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 0px; word-break: break-all; letter-spacing: -0.8px; overflow: hidden; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     
     .inc-history-box {{ background: #fdfdfd; border: 1px solid #f0f0f0; border-radius: 8px; padding: 8px; margin-top: 5px; font-size: 11px; color: #666; }}
@@ -65,7 +64,6 @@ st.markdown(f"""
 # --- 구글 시트 상수 ---
 SHEET_NAME = "아이폰정산"
 ORDERED_STAFF = ["태완", "남근", "성훈"]
-# 표준 사용자 시트 헤더 (Legacy 우선 보존)
 USER_HEADER = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간", "시간수당", "퇴근시간"]
 
 def safe_int(val, default=0):
@@ -95,8 +93,7 @@ def get_config_worksheet():
     ss = get_spreadsheet()
     headers = ["직원명", "기본급", "정산일", "보험료"] + [f"item{i}_name" for i in range(1,8)] + [f"item{i}_price" for i in range(1,8)] + ["시간수당(10분)"]
     try:
-        ws = ss.worksheet("config")
-        curr_h = ws.row_values(1)
+        ws = ss.worksheet("config"); curr_h = ws.row_values(1)
         if len(curr_h) < len(headers) or curr_h[0] != "직원명": ws.update(range_name=f"A1:{chr(ord('A')+len(headers)-1)}1", values=[headers])
         return ws
     except:
@@ -148,7 +145,6 @@ def get_user_worksheet(user_name):
     ss = get_spreadsheet()
     try:
         ws = ss.worksheet(user_name); curr_h = ws.row_values(1)
-        # [v3.7.2] 헤더 강제 표준화 (순서 꼬임 및 시간수당 위치 수정)
         if len(curr_h) < len(USER_HEADER) or "시간수당" not in curr_h or curr_h[3] != "item1":
             ws.update(range_name=f"A1:{chr(ord('A')+len(USER_HEADER)-1)}1", values=[USER_HEADER])
         return ws
@@ -172,13 +168,7 @@ def save_to_gsheet(user_name, df_row):
         sheet = get_user_worksheet(user_name); rows = sheet.get_all_values(); idx = -1
         for i, r in enumerate(rows):
             if len(r) > 1 and r[1] == df_row['날짜']: idx = i + 1; break
-        # [v3.7.2] 표준 헤더 USER_HEADER 에 따라 데이터를 리스트화
-        vals = []
-        for h in USER_HEADER:
-            v = df_row.get(h, "")
-            if h in ["인센티브", "시간수당", "합계"] or "item" in h: vals.append(format_curr(v))
-            else: vals.append(v)
-        
+        vals = [format_curr(df_row.get(h, 0)) if h in ["인센티브", "시간수당", "합계"] or "item" in h else df_row.get(h, "") for h in USER_HEADER]
         if idx != -1: sheet.update(range_name=f"A{idx}:{chr(ord('A')+len(USER_HEADER)-1)}{idx}", values=[vals])
         else: sheet.append_row(vals)
         return True
@@ -187,7 +177,7 @@ def save_to_gsheet(user_name, df_row):
 def get_safe_date(y, m, d): ld = calendar.monthrange(y, m)[1]; return date(y, m, min(safe_int(d, 1), ld))
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 실행 체크 ---
+# --- 세션 초기화 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 STAFF_LIST = get_dynamic_staff_list()
 
@@ -198,7 +188,7 @@ if not st.session_state.logged_in:
     if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.session_state.salary_cfg = load_staff_salary_config(user_id); st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 데이터 정규화 완료</b><br>• 시간수당 컬럼 위치 오류 긴급 수정<br>• 구글 시트 헤더 자동 교정 시스템 적용<br>• 품목 및 수당 항목 간의 열 불일치 해결</div>', unsafe_allow_html=True); st.stop()
+    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} UI 최적화 완료</b><br>• 아이폰 버튼 밀림 현상 완벽 해결<br>• 수당 입력 가독성 중심 재배치<br>• 리포트 요약 합산 및 정산표 정밀 튜닝</div>', unsafe_allow_html=True); st.stop()
 
 user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
 is_ov_staff = user_name in ["태완", "남근"]
@@ -263,10 +253,15 @@ if is_ov_staff:
     etime_list = [f"{h}:{m:02d}" for h in range(20, 24) for m in range(0, 60, 10)] + ["24:00"]
     e_val = existing.iloc[0]["퇴근시간"] if not existing.empty else "20:00"
     e_idx = etime_list.index(e_val) if e_val in etime_list else 0
-    sel_etime = st.selectbox("퇴근 시간", options=etime_list, index=e_idx)
+    
+    # [v3.8.0] 수당 금액을 시간 선택창 바로 위로 배치 및 가시성 강화
+    h_sel, m_sel = map(int, e_val.split(":")) if e_val != "24:00" and e_val != "휴무" else (24, 0)
+    # 아래 metric은 실시간 반영을 위해 sel_etime 정의 후에 계산되지만, UI상 위해 미리 배치
+    st.markdown(f"<div style='background:#f0f8ff; padding:10px; border-radius:10px; border:1px solid #d0e8ff; margin-bottom:10px; text-align:center;'>현재 시간수당: <b style='color:#007bff; font-size:16px;'>{ (max(0, (h_sel*60+m_sel)-1200)//10) * sal_cfg['overtime_rate']:,}원</b></div>", unsafe_allow_html=True)
+    sel_etime = st.selectbox("퇴근 시간 선택", options=etime_list, index=e_idx)
     h, m = map(int, sel_etime.split(":")) if sel_etime != "24:00" else (24, 0)
     ov_min = max(0, (h * 60 + m) - 1200); ov_pay = (ov_min // 10) * sal_cfg["overtime_rate"]
-    c1, c2 = st.columns(2); c1.metric("인센티브 합계", f"{st.session_state.inc_sum:,}원"); c2.metric("시간수당", f"{ov_pay:,}원")
+    st.metric("인센티브 합계", f"{st.session_state.inc_sum:,}원")
 else: st.metric("인센티브 합계", f"{st.session_state.inc_sum:,}원")
 
 if st.session_state.inc_his:
@@ -275,11 +270,13 @@ if st.session_state.inc_his:
     st.markdown(h_html + '</div>', unsafe_allow_html=True)
 
 add_amt = st.number_input("인센 추가 금액", 0, step=1000, value=0, label_visibility="collapsed")
+
+# [v3.8.0] 아이폰 버튼 밀림 해결 (꽉 차는 3단 컬럼)
 with st.container(key="incen_buttons"):
     b1, b2, b3 = st.columns(3)
-    if b1.button("➕추가", use_container_width=True): st.session_state.inc_sum += add_amt; st.session_state.inc_his.append({"val": add_amt}); st.rerun()
-    if b2.button("↩️취소", use_container_width=True) and st.session_state.inc_his: st.session_state.inc_sum -= st.session_state.inc_his.pop()['val']; st.rerun()
-    if b3.button("🧹리셋", use_container_width=True): st.session_state.inc_sum = 0; st.session_state.inc_his = []; st.rerun()
+    b1.button("➕추가", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": st.session_state.inc_sum + add_amt}), st.session_state.inc_his.append({"val": add_amt})))
+    b2.button("↩️취소", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": st.session_state.inc_sum - st.session_state.inc_his.pop()['val']})) if st.session_state.inc_his else None)
+    b3.button("🧹리셋", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": 0, "inc_his": []})))
 
 st.markdown('<div class="section-header">📦 품목 수량 입력</div>', unsafe_allow_html=True)
 cts, it_n, it_p = [], sal_cfg["item_names"], sal_cfg["item_prices"]
@@ -290,9 +287,7 @@ for i in range(0, 6, 2):
 cts.append(st.number_input(it_n[6], 0, value=safe_int(existing.iloc[0]['item7']) if not existing.empty else 0, key="it_6"))
 
 if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
-    # 합계 계산 시 인센티브 + 수당 + 품목 합계
-    item_val = sum([safe_int(c) * safe_int(p) for c, p in zip(cts, it_p)])
-    tot_val = st.session_state.inc_sum + ov_pay + item_val
+    tot_val = st.session_state.inc_sum + ov_pay + sum([safe_int(c) * safe_int(p) for c, p in zip(cts, it_p)])
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "시간수당": ov_pay, "퇴근시간": sel_etime, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": tot_val, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success("저장 완료!"); st.rerun()
 
@@ -312,13 +307,23 @@ if not df_all.empty:
         t_items = safe_int(p_df["합계"].sum()) - t_inc - t_ov
         final_pay = int(b + t_inc + t_ov + t_items - ins)
         
-        inc_label = "인센티브" if is_ov_staff else "인센/수당"
-        inc_val = t_inc + t_items if is_ov_staff else t_inc + t_items + t_ov
-        breakdown_html = f'<div class="calc-detail"><div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div><div class="calc-line"><span>{inc_label}</span> <span>+ {inc_val:,}원</span></div>'
-        if is_ov_staff: breakdown_html += f'<div class="calc-line"><span>시간수당</span> <span>+ {t_ov:,}원</span></div>'
-        st.markdown(breakdown_html + f'<div class="calc-line"><span>보험료</span> <span>- {ins:,}원</span></div><div class="calc-total"><div class="calc-line"><span>💰 총급여</span> <span>{final_pay:,}원</span></div></div></div>', unsafe_allow_html=True)
+        # [v3.8.0] 리포트 요약 합산 표시 (기본급, 인센티브, 보험료 3행만 노출)
+        combined_inc = t_inc + t_items + t_ov
+        st.markdown(f"""
+        <div class="calc-detail">
+            <div class="calc-line"><span>공통 기본급</span> <span>+ {b:,}원</span></div>
+            <div class="calc-line"><span>정산 인센티브</span> <span>+ {combined_inc:,}원</span></div>
+            <div class="calc-line"><span>공제 보험료</span> <span>- {ins:,}원</span></div>
+            <div class="calc-total">
+                <div class="calc-line"><span>💰 총급여</span> <span>{final_pay:,}원</span></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        hds = ["날짜", "인센"] + (["수당"] if is_ov_staff else []) + [n[:2] for n in it_n] + ["합계"]
+        # [v3.8.0] 정산표 헤더 최적화 및 금액 표시 로직
+        h_base = ["날짜", "인센"]
+        if is_ov_staff: h_base.append("시간")
+        hds = h_base + [n[:2] for n in it_n] + ["합계"]
         r_html, i_sums = "", [0]*7
         for _, r in p_df.iterrows():
             md = datetime.strptime(r['날짜'], '%Y-%m-%d').strftime('%m/%d')
