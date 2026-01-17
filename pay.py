@@ -5,12 +5,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v2.4.4"
+SW_VERSION = "v2.4.5"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [스마트 레이아웃] 아이폰 가로 3열 버튼 강제 고정 CSS ---
+# --- [스마트 레이아웃] 최적화 CSS ---
 st.markdown(f"""
     <style>
     /* 1. 전체 여백 최적화 */
@@ -22,29 +22,25 @@ st.markdown(f"""
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
 
-    /* 2. 불필요한 서식 제거 */
+    /* 2. 불필요한 서식 제거 및 입력창 스타일 */
     hr {{ border: 0; height: 1px; background: #eee; margin: 15px 0; }}
     div[data-testid="stVerticalBlock"] > div {{ border: none !important; }}
     div[data-baseweb="base-input"] {{ border: none !important; background-color: #f1f3f5 !important; border-radius: 8px !important; }}
 
-    /* 3. ★ 핵심: 좁은 화면에서도 가로 3열 강제 유지 ★ */
-    [data-testid="stHorizontalBlock"] {{
+    /* 3. ★ 핵심: 인센티브 버튼만 가로 3열 강제 고정 ★ */
+    /* 수량 입력기의 - + 버튼에 영향을 주지 않도록 클래스를 특정합니다 */
+    .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
-        flex-wrap: nowrap !important; /* 아래로 떨어지지 않게 설정 */
-        align-items: center !important;
-        gap: 4px !important; /* 버튼 사이 간격 최소화 */
+        flex-wrap: nowrap !important;
+        gap: 5px !important;
     }}
-    [data-testid="stHorizontalBlock"] > div {{
-        flex: 1 1 0% !important; /* 모든 컬럼이 동일한 폭을 가짐 */
-        min-width: 0 !important;
-    }}
-    div[data-testid="stHorizontalBlock"] button {{
-        font-size: 11px !important; /* 아이폰용 글자 크기 최적화 */
+    .st-key-incen_buttons [data-testid="stHorizontalBlock"] button {{
+        font-size: 11px !important;
         padding: 0px !important;
         width: 100% !important;
         min-height: 40px !important;
-        white-space: nowrap !important; /* 글자 줄바꿈 방지 */
+        white-space: nowrap !important;
     }}
 
     /* 4. 텍스트 및 테이블 스타일 */
@@ -177,17 +173,18 @@ if st.session_state.incen_history:
 
 add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0)
 
-# 가로 3열 강제 고정 버튼
-col1, col2, col3 = st.columns(3)
-if col1.button("➕추가", use_container_width=True):
-    st.session_state.current_incen_sum += add_amt
-    st.session_state.incen_history.append({"val": add_amt, "time": get_now_kst().strftime("%H:%M")})
-    st.rerun()
-if col2.button("↩️취소", use_container_width=True) and st.session_state.incen_history:
-    pop_item = st.session_state.incen_history.pop()
-    st.session_state.current_incen_sum -= pop_item['val']; st.rerun()
-if col3.button("🧹리셋", use_container_width=True):
-    st.session_state.current_incen_sum = 0; st.session_state.incen_history = []; st.rerun()
+# 인센티브 버튼 영역 (ID 부여하여 CSS 적용)
+with st.container(key="incen_buttons"):
+    col1, col2, col3 = st.columns(3)
+    if col1.button("➕추가", use_container_width=True):
+        st.session_state.current_incen_sum += add_amt
+        st.session_state.incen_history.append({"val": add_amt, "time": get_now_kst().strftime("%H:%M")})
+        st.rerun()
+    if col2.button("↩️취소", use_container_width=True) and st.session_state.incen_history:
+        pop_item = st.session_state.incen_history.pop()
+        st.session_state.current_incen_sum -= pop_item['val']; st.rerun()
+    if col3.button("🧹리셋", use_container_width=True):
+        st.session_state.current_incen_sum = 0; st.session_state.incen_history = []; st.rerun()
 
 st.divider()
 st.write("**📦 품목 수량**")
