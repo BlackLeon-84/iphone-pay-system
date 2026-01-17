@@ -507,8 +507,8 @@ sel_idx = st.selectbox("정산 월 선택", range(len(m_opts)), format_func=lamb
 s_dt, e_dt = m_ranges[sel_idx]
 st.markdown(f":grey_exclamation: **정산 기간:** {s_dt.month}월 {s_dt.day}일 ~ {e_dt.month}월 {e_dt.day}일")
 
-# 현금 수령액 입력 (보고서용)
-with st.expander("💵 현금 수령액 입력 (이달에 미리 받아간 현금)"):
+# 매장 현금 입력 (보고서용)
+with st.expander("💵 매장 현금 입력 (이달에 미리 받아간 현금)"):
     # 마지막 날짜(ed_dt)의 현금 데이터 조회
     ed_str = e_dt.strftime("%Y-%m-%d")
     last_row = df_all[df_all["날짜"] == ed_str] if not df_all.empty else pd.DataFrame()
@@ -539,13 +539,23 @@ if not df_all.empty:
         final_pay = int(b + total_sum_val - ins - t_cash); combined_inc = t_inc + t_items + t_ov
         
         
-        # 리포트 요약 카드 HTML 생성 (마크다운 인덴트 오류 방지)
+        
+        # 리포트 요약 카드 HTML 생성 (구조 개선: 급여 소계 -> 매장 현금 차감 -> 실 수령액)
+        subtotal_pay = int(b + total_sum_val - ins)
+        
         summary_html = f'<div class="calc-detail">'
+        # 1. 정식 급여 파트
         summary_html += f'<div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div>'
-        summary_html += f'<div class="calc-line"><span>인센티브 (시간수당 포함)</span> <span>+ {combined_inc:,}원</span></div>'
+        summary_html += f'<div class="calc-line"><span>인센티브</span> <span>+ {combined_inc:,}원</span></div>'
         summary_html += f'<div class="calc-line" style="color:red;"><span>보험료</span> <span>- {ins:,}원</span></div>'
+        
+        # 2. 매장 현금 차감 파트 (있을 경우만 분리 표시)
         if t_cash > 0:
-            summary_html += f'<div class="calc-line" style="color:#ef6c00;"><span>현금 수령 (가불/선지급)</span> <span>- {t_cash:,}원</span></div>'
+             summary_html += f'<div style="border-top:1px dashed #ddd; margin:8px 0; padding-top:8px;"></div>'
+             summary_html += f'<div class="calc-line" style="color:#555;"><span>급여 합계</span> <span>{subtotal_pay:,}원</span></div>'
+             summary_html += f'<div class="calc-line" style="color:#ef6c00;"><span>매장 현금</span> <span>- {t_cash:,}원</span></div>'
+             
+        # 3. 최종 수령액
         summary_html += f'<div class="calc-total"><div class="calc-line"><span>💰 실 수령액</span> <span>{final_pay:,}원</span></div></div>'
         summary_html += '</div>'
         st.markdown(summary_html, unsafe_allow_html=True)
