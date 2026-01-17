@@ -7,7 +7,7 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.5.2"
+SW_VERSION = "v3.5.3"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -63,9 +63,15 @@ st.markdown(f"""
     
     .calc-detail {{ font-size: 11px; color: #888; margin-top: 5px; background: #fcfcfc; padding: 8px; border-radius: 5px; border-left: 3px solid #ddd; }}
     
-    /* 사이드바 가독성 개선 */
     [data-testid="stSidebar"] .st-at {{ font-size: 12px; }}
     [data-testid="stSidebar"] .stSubheader {{ font-size: 14px; font-weight: bold; color: #007bff; margin-top: 15px; }}
+
+    /* 보기 전용 정보 상자 */
+    .info-box {{
+        background: #fafafa; border: 1px solid #eee; padding: 10px; border-radius: 8px; font-size: 12px; line-height: 1.6;
+    }}
+    .info-label {{ color: #777; font-weight: bold; width: 70px; display: inline-block; }}
+    .info-val {{ color: #333; font-weight: bold; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -76,8 +82,12 @@ ORDERED_STAFF = ["태완", "남근", "성훈"]
 def safe_int(val, default=0):
     try:
         if val is None: return default
+        # 콤마 제거 후 숫자로 변환
         return int(str(val).replace(",", "").strip())
     except: return default
+
+def format_curr(val):
+    return f"{safe_int(val):,}"
 
 @st.cache_resource
 def get_gsheet_client():
@@ -115,7 +125,6 @@ def get_dynamic_staff_list():
     try:
         sheet = get_config_worksheet()
         names = sheet.col_values(1)[1:]
-        # [업데이트] 태완/남근/성훈 순서 고정
         res = []
         for s in ORDERED_STAFF:
             if s in names or s in ORDERED_STAFF: res.append(s)
@@ -160,7 +169,8 @@ def save_staff_salary_config(name, base, day, ins, names, prices):
     idx = -1
     for i, r in enumerate(rows):
         if r and r[0] == name: idx = i + 1; break
-    data = [name, safe_int(base), safe_int(day), safe_int(ins)] + names + [safe_int(p) for p in prices]
+    # [업데이트] 시트 자체의 가독성을 위해 콤마를 포함한 문자열로 저장
+    data = [name, format_curr(base), safe_int(day), format_curr(ins)] + names + [format_curr(p) for p in prices]
     if idx != -1:
         col = chr(ord('A') + len(data) - 1)
         sheet.update(range_name=f"A{idx}:{col}{idx}", values=[data])
@@ -196,7 +206,14 @@ def save_to_gsheet(user_name, df_row):
         idx = -1
         for i, r in enumerate(rows):
             if len(r) > 1 and r[1] == df_row['날짜']: idx = i + 1; break
-        vals = list(df_row.values())
+        # [업데이트] 일반 데이터 저장 시에도 콤마 포맷팅 적용
+        vals = []
+        for k, v in df_row.items():
+            if k in ["인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계"]:
+                vals.append(format_curr(v))
+            else:
+                vals.append(v)
+        
         if idx != -1:
             col = chr(ord('A') + len(vals) - 1)
             sheet.update(range_name=f"A{idx}:{col}{idx}", values=[vals])
@@ -210,7 +227,7 @@ def get_safe_date(y, m, d):
 
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 실행 제어 ---
+# --- 메인 코드 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 STAFF_LIST = get_dynamic_staff_list()
 
@@ -225,39 +242,56 @@ if not st.session_state.logged_in:
             st.session_state.user_name = user_id
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 가독성 업데이트</b><br>• 직원 순서 고정 (태완/남근/성훈)<br>• 설정 페이지 섹션 분리 및 금액 콤마 표시<br>• 기존 디자인 완벽 유지 및 버그 점검 완료</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 시트 가독성 강화</b><br>• 구글 시트 내 숫자 콤마(,) 포함 저장<br>• 전 직원 본인 설정 정보 조회 가능<br>• 관리자 설정 UI 시인성 보강 및 버그 픽스</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
 
-# --- 사이드바 (설정) ---
+# --- 사이드바 ---
 with st.sidebar:
     st.header("⚙️ 설정")
+    
+    # [업데이트] 관리자가 아닌 일반 직원도 자신의 정보 확인 가능
+    if user_name != "태완":
+        st.subheader("👤 내 정보 (보기 전용)")
+        info_html = f"""
+        <div class="info-box">
+            <span class="info-label">기본급:</span> <span class="info-val">{sal_cfg['base_salary']:,}원</span><br>
+            <span class="info-label">보험료:</span> <span class="info-val">{sal_cfg['insurance']:,}원</span><br>
+            <span class="info-label">정산일:</span> <span class="info-val">매달 {sal_cfg['start_day']}일</span><hr style='margin:5px 0;'>
+            <b>[품목 단가]</b><br>
+        """
+        for n, p in zip(sal_cfg["item_names"], sal_cfg["item_prices"]):
+            info_html += f"<span class='info-label'>{n[:4]}:</span> <span class='info-val'>{p:,}원</span><br>"
+        st.markdown(info_html + "</div>", unsafe_allow_html=True)
+
     if user_name == "태완":
         st.subheader("🛠️ 관리자 설정")
         target = st.selectbox("수정 대상 직원", STAFF_LIST)
         t_sal = load_staff_salary_config(target)
         
-        # [업데이트] 섹션 1: 품목 설정
         st.subheader("📦 품목 명칭 및 단가")
         new_n, new_p = [], []
         for i in range(7):
             c1, c2 = st.columns([1.2, 1])
             n = c1.text_input(f"명칭{i+1}", value=t_sal["item_names"][i], key=f"sn_{target}_{i}")
             p_val = t_sal["item_prices"][i]
-            p = c2.number_input(f"단가{i+1}", value=p_val, step=1000, key=f"sp_{target}_{i}", help=f"현재: {p_val:,}원")
+            # [업데이트] 입력창 아래에 콤마가 포함된 금액을 크게 표시하여 직관성 증대
+            p = c2.number_input(f"단가{i+1}", value=p_val, step=1000, key=f"sp_{target}_{i}")
+            st.markdown(f"<div style='text-align:right; font-size:11px; color:#007bff; margin-top:-10px; margin-bottom:5px; font-weight:bold;'>{p:,}원</div>", unsafe_allow_html=True)
             new_n.append(n); new_p.append(p)
         
         st.divider()
-        # [업데이트] 섹션 2: 급여 설정
         st.subheader("💰 급여 및 보험료")
-        base = st.number_input(f"기본급 ({safe_int(t_sal['base_salary']):,}원)", value=safe_int(t_sal["base_salary"]), step=10000)
-        ins = st.number_input(f"보험료 ({safe_int(t_sal['insurance']):,}원)", value=safe_int(t_sal["insurance"]), step=1000)
+        base = st.number_input(f"기본급 수정", value=safe_int(t_sal["base_salary"]), step=10000)
+        st.markdown(f"<div style='font-size:13px; color:#007bff; font-weight:bold; margin-top:-10px;'>현재: {base:,}원</div>", unsafe_allow_html=True)
+        
+        ins = st.number_input(f"보험료 수정", value=safe_int(t_sal["insurance"]), step=1000)
+        st.markdown(f"<div style='font-size:13px; color:#007bff; font-weight:bold; margin-top:-10px;'>현재: {ins:,}원</div>", unsafe_allow_html=True)
         
         st.divider()
-        # [업데이트] 섹션 3: 정산일 설정
         st.subheader("📅 정산 시작일")
-        s_day = st.slider(f"매달 {t_sal['start_day']}일 시작", 1, 31, value=min(max(1, t_sal["start_day"]), 31))
+        s_day = st.slider(f"시작일 설정", 1, 31, value=min(max(1, t_sal["start_day"]), 31))
         
         st.divider()
         if st.button(f"💿 {target} 설정 저장", use_container_width=True):
