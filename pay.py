@@ -5,21 +5,21 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.1.2"
+SW_VERSION = "v3.1.4"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [스마트 레이아웃] 아이폰 100% 최적화 CSS ---
+# --- [v3.0.0 디자인 100% 복구] CSS ---
 st.markdown(f"""
     <style>
     .block-container {{ padding-top: 3.5rem !important; max-width: 450px !important; padding-left: 10px !important; padding-right: 10px !important; }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
     
-    /* 인센티브 가로 버튼 3분할 고정 (절대 수정 금지) */
+    /* v3.0.0 인센티브 버튼 가로 배열 복구 */
     .st-key-incen_buttons [data-testid="column"] {{
-        width: calc(33.33% - 5px) !important;
-        flex: 1 1 calc(33.33% - 5px) !important;
+        width: 33% !important;
+        flex: 1 1 33% !important;
         min-width: 0 !important;
     }}
     .st-key-incen_buttons button {{
@@ -33,10 +33,8 @@ st.markdown(f"""
     .period-text {{ font-size: 13px; color: #666; font-weight: bold; margin-bottom: 10px; }}
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
     .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
-    .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; font-size: 11px; }}
+    .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     .save-log {{ font-size: 12px; color: #1e88e5; font-weight: bold; margin-bottom: 5px; }}
-    .config-log {{ font-size: 11px; color: #28a745; background: #f0fff4; padding: 8px; border-radius: 5px; margin-top: 10px; border: 1px solid #c6f6d5; }}
-    .update-log {{ font-size: 11px; color: #777; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 30px; border: 1px solid #eee; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -84,7 +82,7 @@ def save_to_gsheet(user_name, df_row):
 
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 초기 설정 ---
+# --- 초기 세션 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "config_dict" not in st.session_state:
@@ -93,19 +91,18 @@ if "config_dict" not in st.session_state:
         "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
         "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]
     } for name in STAFF_LIST}
-if "admin_log" not in st.session_state: st.session_state.admin_log = []
 
-# --- 로그인 ---
+# --- [v3.0.0 복구] 로그인 화면 ---
 if not st.session_state.logged_in:
-    st.title("🔐 로그인")
+    st.title("아이폰정산 로그인")
     user_id = st.selectbox("직원 선택", options=STAFF_LIST)
     admin_pw = st.text_input("비번", type="password") if user_id == "태완" else ""
-    if st.button("입장", use_container_width=True, key="login_btn"):
+    if st.button("입장", use_container_width=True):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     st.stop()
 
-# --- 사이드바 ---
+# --- 메인 본문 ---
 user_name = st.session_state.user_name
 cfg = st.session_state.config_dict[user_name]
 
@@ -118,20 +115,16 @@ with st.sidebar:
         for i in range(7):
             c1, c2 = st.columns(2)
             n = c1.text_input(f"명칭{i+1}", value=t_cfg["item_names"][i], key=f"sn_{target_staff}_{i}")
-            p = c2.number_input(f"가격{i+1}", value=int(t_cfg["item_prices"][i]), step=1000, key=f"sp_{target_staff}_{i}")
+            p = c2.number_input(f"가격{i+1}", value=int(t_cfg["item_prices"][i]), step=1000, format="%d", key=f"sp_{target_staff}_{i}")
             new_names.append(n); new_prices.append(p)
-        base = st.number_input("기본급", value=int(t_cfg["base_salary"]), step=10000)
+        base = st.number_input("기본급", value=int(t_cfg["base_salary"]), step=10000, format="%d")
         s_day = st.slider("시작일", 1, 31, t_cfg["start_day"])
-        ins = st.number_input("보험료", value=int(t_cfg["insurance"]), step=10)
+        ins = st.number_input("보험료", value=int(t_cfg["insurance"]), step=10, format="%d")
         if st.button("💿 설정 저장", use_container_width=True):
             st.session_state.config_dict[target_staff].update({"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices})
-            st.session_state.admin_log.insert(0, f"{get_now_kst().strftime('%m-%d %H:%M')} | {target_staff} 저장")
             st.success("저장 완료"); st.rerun()
-        if st.session_state.admin_log:
-            st.markdown(f'<div class="config-log">{"<br>".join(st.session_state.admin_log[:3])}</div>', unsafe_allow_html=True)
     if st.button("로그아웃"): st.session_state.logged_in = False; st.rerun()
 
-# --- 메인 화면 ---
 st.markdown(f'<div class="version-tag">{SW_VERSION}</div>', unsafe_allow_html=True)
 df_all = load_data_from_gsheet(user_name)
 st.write(f"### 💼 {user_name}님 실적")
@@ -139,7 +132,6 @@ st.write(f"### 💼 {user_name}님 실적")
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
-# [수정] NameError 방지를 위한 변수 선언 순서 조정
 existing_row = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
 is_edit = not existing_row.empty
 
@@ -150,7 +142,6 @@ if st.button("🌴 휴무 등록", use_container_width=True):
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.rerun()
 
-# 인센티브 합계 섹션
 st.divider()
 if "incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
@@ -158,7 +149,7 @@ if "incen_sum" not in st.session_state or st.session_state.get("last_date") != s
     st.session_state.last_date = str_date
 
 st.write(f"**💰 인센 합계: {st.session_state.incen_sum:,}원**")
-add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0, label_visibility="collapsed")
+add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0, format="%d", label_visibility="collapsed")
 
 with st.container(key="incen_buttons"):
     c1, c2, c3 = st.columns(3)
@@ -185,7 +176,7 @@ if st.button("✅ 데이터 최종 저장", type="primary", use_container_width=
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.incen_sum, "item1": counts[0], "item2": counts[1], "item3": counts[2], "item4": counts[3], "item5": counts[4], "item6": counts[5], "item7": counts[6], "합계": st.session_state.incen_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success(f"{str_date} 저장 성공"); st.rerun()
 
-# 정산 리포트
+# --- 정산 리포트 ---
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day = cfg['start_day']
