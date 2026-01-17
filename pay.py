@@ -5,12 +5,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.2.7"
+SW_VERSION = "v3.3.0"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [v3.0.5 디자인 100% 보존 + 섹션 분리] CSS ---
+# --- [디자인 보존] 아이폰 최적화 CSS ---
 st.markdown(f"""
     <style>
     .block-container {{
@@ -21,7 +21,6 @@ st.markdown(f"""
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
     
-    /* 섹션 분리 디자인 (v3.0.5 스타일 유지) */
     .section-header {{
         font-size: 14px;
         font-weight: bold;
@@ -31,7 +30,7 @@ st.markdown(f"""
         border-left: 4px solid #007bff;
     }}
 
-    /* 아이폰 가로 버튼 (v3.0.5 핵심 설정) */
+    /* 아이폰 가로 버튼 3열 보존 */
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
@@ -51,7 +50,6 @@ st.markdown(f"""
         white-space: nowrap !important;
     }}
 
-    /* 관리자 설정 로그 스타일 */
     .admin-log {{
         font-size: 11px;
         color: #155724;
@@ -79,7 +77,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 연결 ---
+# --- 구글 시트 연결 및 설정 관리 ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
@@ -97,9 +95,37 @@ def get_user_worksheet(user_name):
     spreadsheet = client.open(SHEET_NAME)
     try: return spreadsheet.worksheet(user_name)
     except:
-        new_sheet = spreadsheet.add_worksheet(title=user_name, rows="1000", cols="20")
-        new_sheet.append_row(["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
+        new_sheet = spreadsheet.add_worksheet(title=user_name, rows="1000", cols="25")
+        # 데이터 헤더 + 설정값 저장용 헤더(O열 이후)
+        headers = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간", "", "기본급", "보험료", "시작일", "명칭1", "가격1", "명칭2", "가격2", "명칭3", "가격3", "명칭4", "가격4"]
+        new_sheet.append_row(headers)
         return new_sheet
+
+def load_user_config(user_name):
+    """시트의 2행 특정 열에서 설정값을 읽어옴"""
+    try:
+        sheet = get_user_worksheet(user_name)
+        vals = sheet.row_values(2)
+        if len(vals) < 15: raise Exception("Config not found")
+        return {
+            "base_salary": int(vals[14]), "insurance": int(vals[15]), "start_day": int(vals[16]),
+            "item_names": [vals[17], vals[19], vals[21], vals[23], vals[25] if len(vals)>25 else "추가1", "추가2", "추가3"],
+            "item_prices": [int(vals[18]), int(vals[20]), int(vals[22]), int(vals[24]), 0, 0, 0]
+        }
+    except:
+        return {"base_salary": 3500000, "start_day": 13, "insurance": 104760, 
+                "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
+                "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]}
+
+def save_user_config_to_sheet(user_name, cfg):
+    """시트 2행의 특정 열에 설정값 저장"""
+    sheet = get_user_worksheet(user_name)
+    # O열(15번째)부터 시작
+    config_vals = [cfg["base_salary"], cfg["insurance"], cfg["start_day"], 
+                   cfg["item_names"][0], cfg["item_prices"][0], cfg["item_names"][1], cfg["item_prices"][1],
+                   cfg["item_names"][2], cfg["item_prices"][2], cfg["item_names"][3], cfg["item_prices"][3]]
+    for i, val in enumerate(config_vals):
+        sheet.update_cell(2, 15 + i, val)
 
 def load_data_from_gsheet(user_name):
     try:
@@ -128,10 +154,6 @@ def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 # --- 세션 설정 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
-if "config_all" not in st.session_state:
-    st.session_state.config_all = {name: {"base_salary": 3500000, "start_day": 13, "insurance": 104760, 
-                                   "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
-                                   "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]} for name in STAFF_LIST}
 
 # --- 로그인 ---
 if not st.session_state.logged_in:
@@ -140,20 +162,26 @@ if not st.session_state.logged_in:
     admin_pw = st.text_input("비번", type="password") if user_id == "태완" else ""
     if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
-        else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 최근 7일 기록 아이콘 복구<br>• 관리자 설정 저장 로그 기능 추가<br>• 인센티브/품목 섹션 구분 디자인</div>', unsafe_allow_html=True)
+        else: 
+            st.session_state.logged_in = True
+            st.session_state.user_name = user_id
+            st.session_state.config = load_user_config(user_id) # 시트에서 설정 불러오기
+            st.rerun()
+    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 급여/품목 설정 시트 영구 저장 적용<br>• 최근 7일 기록 및 아이폰 3열 레이아웃 보존</div>', unsafe_allow_html=True)
     st.stop()
 
-# --- 사이드바 (관리자 설정 로그) ---
+# --- 사이드바 ---
 user_name = st.session_state.user_name
-cfg = st.session_state.config_all[user_name]
+cfg = st.session_state.config
 
 with st.sidebar:
     st.header("⚙️ 설정")
     if user_name == "태완":
         st.subheader("🛠️ 관리자 설정")
         target_staff = st.selectbox("수정 대상 직원", STAFF_LIST)
-        t_cfg = st.session_state.config_all[target_staff]
+        # 대상 직원의 설정을 시트에서 새로 읽어옴
+        t_cfg = load_user_config(target_staff) if target_staff != user_name else cfg
+        
         new_names = []; new_prices = []
         for i in range(7):
             c1, c2 = st.columns(2)
@@ -163,9 +191,12 @@ with st.sidebar:
         base = st.number_input("기본급", value=t_cfg["base_salary"])
         s_day = st.slider("정산 시작일", 1, 31, t_cfg["start_day"])
         ins = st.number_input("보험료", value=t_cfg["insurance"])
-        if st.button(f"💿 {target_staff} 설정 저장", use_container_width=True):
-            st.session_state.config_all[target_staff].update({"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices})
-            st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] {target_staff}님 설정이 변경됨"
+        
+        if st.button(f"💿 {target_staff} 설정 시트 저장", use_container_width=True):
+            updated_cfg = {"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices}
+            save_user_config_to_sheet(target_staff, updated_cfg)
+            if target_staff == user_name: st.session_state.config = updated_cfg
+            st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] 시트 저장 완료"
             st.rerun()
         if "admin_log" in st.session_state:
             st.markdown(f'<div class="admin-log">{st.session_state.admin_log}</div>', unsafe_allow_html=True)
@@ -187,7 +218,7 @@ if st.button("🌴 오늘 휴무 등록", use_container_width=True):
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.rerun()
 
-# --- 최근 7일 기록 (복구 완료) ---
+# --- 최근 7일 기록 ---
 st.write("**📅 최근 7일 기록**")
 weekly_html = '<div class="weekly-box">'
 today_kst = get_now_kst().date()
@@ -239,7 +270,7 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
            "합계": st.session_state.inc_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success("저장 완료!"); st.rerun()
 
-# --- 정산 리포트 (원본 유지) ---
+# --- 정산 리포트 ---
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day, base, ins = cfg['start_day'], cfg['base_salary'], cfg['insurance']
