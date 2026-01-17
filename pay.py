@@ -282,6 +282,104 @@ sal_cfg = load_staff_salary_config(user_name)
 is_ov_staff = user_name in ["태완", "남근"]
 df_all = load_data_from_gsheet(user_name)
 
+def render_monthly_report(df_all, target_date, sal_cfg, is_ov_staff, user_name, readonly=False):
+    """
+    월간 정산 리포트를 렌더링하는 함수 (재사용 가능)
+    readonly=True이면 입력 UI 없이 리포트만 출력
+    """
+    # 1. 정산 기간 계산
+    year, month = target_date.year, target_date.month
+    s_d = safe_int(sal_cfg['start_day'], 13)
+    
+    if target_date.day >= s_d: 
+        s_dt = date(year, month, s_d)
+        # 익월 정산일 전날까지
+        next_m = month + 1 if month < 12 else 1
+        next_y = year if month < 12 else year + 1
+        e_dt = date(next_y, next_m, s_d) - timedelta(days=1)
+    else:
+        # 전월 정산일부터
+        prev_m = month - 1 if month > 1 else 12
+        prev_y = year if month > 1 else year - 1
+        s_dt = date(prev_y, prev_m, s_d)
+        e_dt = date(year, month, s_d) - timedelta(days=1)
+
+    if not readonly:
+        st.markdown(f":grey_exclamation: **정산 기간:** {s_dt.month}월 {s_dt.day}일 ~ {e_dt.month}월 {e_dt.day}일")
+
+    # 2. 데이터 필터링
+    if df_all.empty:
+        st.info("📉 저장된 데이터가 없습니다.")
+        return
+
+    df_all['date_dt'] = pd.to_datetime(df_all['날짜']).dt.date
+    p_df = df_all[(df_all['date_dt'] >= s_dt) & (df_all['date_dt'] <= e_dt)].sort_values("날짜")
+
+    if p_df.empty:
+        st.info("📉 해당 기간에 조회된 데이터가 없습니다.")
+        return
+
+    # 3. 급여 계산
+    b, ins = safe_int(sal_cfg['base_salary']), safe_int(sal_cfg['insurance'])
+    it_n, it_p = sal_cfg["item_names"], sal_cfg["item_prices"]
+
+    if sal_cfg.get("apply_global"):
+        t_inc = safe_int(p_df["인센티브"].sum())
+        t_ov = safe_int(p_df["시간수당"].sum())
+        t_items = sum([safe_int(p_df[f"item{i+1}"].sum()) * safe_int(it_p[i]) for i in range(7)])
+        total_sum_val = t_inc + t_ov + t_items
+        # 공제 항목은 마지막 날짜(또는 기간 내 합계) 기준 - 여기서는 합계로 처리
+        t_cash = safe_int(p_df["현금"].sum()) if "현금" in p_df.columns else 0
+        t_card = safe_int(p_df["카드"].sum()) if "카드" in p_df.columns else 0
+        t_card_ex = safe_int(p_df["카드제외"].sum()) if "카드제외" in p_df.columns else 0
+        t_etc = safe_int(p_df["기타"].sum()) if "기타" in p_df.columns else 0
+    else:
+        total_sum_val = safe_int(p_df["합계"].sum()); t_inc = safe_int(p_df["인센티브"].sum()); t_ov = safe_int(p_df["시간수당"].sum()); t_items = total_sum_val - t_inc - t_ov
+        t_cash = safe_int(p_df["현금"].sum()) if "현금" in p_df.columns else 0
+        t_card = safe_int(p_df["카드"].sum()) if "카드" in p_df.columns else 0
+        t_card_ex = safe_int(p_df["카드제외"].sum()) if "카드제외" in p_df.columns else 0
+        t_etc = safe_int(p_df["기타"].sum()) if "기타" in p_df.columns else 0
+
+    # [핵심 변경] 카드 실 공제액 = 카드 총액 - 카드 제외액
+    t_card_real = t_card - t_card_ex
+    final_pay = int(b + total_sum_val - ins - t_cash - t_card_real - t_etc)
+    combined_inc = t_inc + t_items + t_ov
+    subtotal_pay = int(b + total_sum_val - ins)
+
+    # 4. 리포트 요약 HTML 생성
+    summary_html = f'<div class="calc-detail">'
+    summary_html += f'<div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div>'
+    summary_html += f'<div class="calc-line"><span>인센티브</span> <span>+ {combined_inc:,}원</span></div>'
+    summary_html += f'<div class="calc-line" style="color:red;"><span>보험료</span> <span>- {ins:,}원</span></div>'
+    
+    if t_cash > 0 or t_card_real > 0 or t_etc > 0:
+         summary_html += f'<div style="border-top:1px dashed #ddd; margin:8px 0; padding-top:8px;"></div>'
+         summary_html += f'<div class="calc-line" style="color:#555;"><span>급여 합계</span> <span>{subtotal_pay:,}원</span></div>'
+         if t_cash > 0: summary_html += f'<div class="calc-line" style="color:#ef6c00;"><span>매장 현금</span> <span>- {t_cash:,}원</span></div>'
+         if t_card_real > 0: summary_html += f'<div class="calc-line" style="color:#ef6c00;"><span>카드 사용 ({t_card:,}-{t_card_ex:,})</span> <span>- {t_card_real:,}원</span></div>'
+         if t_etc > 0: summary_html += f'<div class="calc-line" style="color:#ef6c00;"><span>기타 공제</span> <span>- {t_etc:,}원</span></div>'
+
+    summary_html += f'<div class="calc-total"><div class="calc-line"><span>💰 실 수령액</span> <span>{final_pay:,}원</span></div></div>'
+    summary_html += '</div>'
+    st.markdown(summary_html, unsafe_allow_html=True)
+
+    # 5. 상세 테이블 출력
+    h_base = ["날짜", "인센"] + (["수당"] if is_ov_staff else []); hds = h_base + [n[:2] for n in it_n] + ["합계"]
+    r_html, i_sums = "", [0]*7
+    for _, r in p_df.iterrows():
+        md = datetime.strptime(r['날짜'], '%Y-%m-%d').strftime('%m/%d')
+        if r['비고'] == "휴무": r_html += f"<tr><td style='font-weight:bold;'>{md}</td><td colspan='{len(hds)-1}' style='color:orange;'>🌴휴무</td></tr>"
+        else:
+            row_inc, row_ov = safe_int(r['인센티브']), safe_int(r.get('시간수당', 0))
+            for i in range(1, 8): i_sums[i-1] += safe_int(r[f'item{i}'])
+            row_total = (row_inc + row_ov + sum([safe_int(r[f'item{i+1}']) * safe_int(it_p[i]) for i in range(7)])) if sal_cfg.get("apply_global") else safe_int(r['합계'])
+            disp_inc, ov_td = (row_inc if is_ov_staff else row_inc + row_ov), (f"<td>{row_ov:,}</td>" if is_ov_staff else "")
+            it_tds = "".join([f"<td>{safe_int(r[f'item{i}'])}</td>" for i in range(1, 8)])
+            r_html += f"<tr><td style='font-weight:bold;'>{md}</td><td>{disp_inc:,}</td>{ov_td}{it_tds}<td style='color:blue;'>{row_total:,}</td></tr>"
+    
+    r_html += f"<tr class='total-row'><td>합계</td><td>{(t_inc if is_ov_staff else t_inc + t_ov):,}</td>" + (f"<td>{t_ov:,}</td>" if is_ov_staff else "") + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{total_sum_val:,}</td></tr>"
+    st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{x}</th>" for x in hds])}</tr>{r_html}</table>', unsafe_allow_html=True)
+
 # --- 탭 구성 ---
 tab_daily, tab_report = st.tabs(["📝 일일 입력", "📊 월간 정산"])
 
@@ -479,6 +577,11 @@ with tab_daily:
         st.markdown(f'<div class="save-success">{st.session_state.sv_msg}</div>', unsafe_allow_html=True)
         st.session_state.sv_msg = None
 
+    # [New] 하단 리포트 표시 (조회 전용)
+    st.divider()
+    st.markdown("##### 📊 이달의 정산 현황 (미리보기)")
+    render_monthly_report(df_all, sel_date, sal_cfg, is_ov_staff, user_name, readonly=True)
+
 # --- 탭 2: 월간 정산 ---
 with tab_report:
     st.header("📊 월간 정산 리포트")
@@ -520,134 +623,75 @@ with tab_report:
         # 기본값 로드
         cur_cash = safe_int(last_row.iloc[0]["현금"]) if not last_row.empty and "현금" in last_row.columns else 0
         cur_etc = safe_int(last_row.iloc[0]["기타"]) if not last_row.empty and "기타" in last_row.columns else 0
+        cur_card_total = safe_int(last_row.iloc[0]["카드"]) if not last_row.empty and "카드" in last_row.columns else 0
         cur_card_detail = str(last_row.iloc[0]["카드상세"]) if not last_row.empty and "카드상세" in last_row.columns else ""
         
         # 공제 입력 UI
         c1, c2 = st.columns(2)
-        new_cash = c1.number_input("매장 현금", value=cur_cash, step=10000, help="가불, 선지급 등")
+        new_cash = c1.number_input("매장 현금 (가불)", value=cur_cash, step=10000, help="가불, 선지급 등")
         new_etc = c2.number_input("기타 공제", value=cur_etc, step=10000)
         
         st.markdown("---")
-        st.markdown("**💳 카드 사용 상세 내역**")
+        st.markdown("**💳 법인카드 사용분 공제 (회사 사용분 제외)**")
         
-        # 카드 내역 파싱 (Format: "내역__금액__X||내역__금액__O")
-        # 세션 스테이트를 사용하여 입력 관리
-        if "card_items" not in st.session_state or st.session_state.get("last_loaded_card_date") != ed_str:
-             st.session_state.card_items = []
+        # 1. 카드 총 사용액 수동 입력
+        new_card_total = st.number_input("카드 총 사용액 (명세서 기준)", value=cur_card_total, step=10000, help="카드 명세서에 나온 이번 달 총 청구금액을 입력하세요.")
+        
+        # 2. 공제 제외 항목 (회사 사용분) 리스트 관리
+        if "card_exclude_items" not in st.session_state or st.session_state.get("last_loaded_card_ex_date") != ed_str:
+             st.session_state.card_exclude_items = []
              if cur_card_detail:
                  for item in cur_card_detail.split("||"):
                      if "__" in item:
                          parts = item.split("__")
-                         st.session_state.card_items.append({"desc": parts[0], "amt": safe_int(parts[1]), "ex": parts[2] == "O"})
-             st.session_state.last_loaded_card_date = ed_str
+                         # Format: "desc__amt__O" (O=Exclude, X=Not used anymore but keep for logic)
+                         # New Logic: Only keep items marked as "Excluded" (O) in the UI list logic
+                         if parts[2] == "O":
+                             st.session_state.card_exclude_items.append({"desc": parts[0], "amt": safe_int(parts[1])})
+             st.session_state.last_loaded_card_ex_date = ed_str
 
-        # 리스트 출력 및 삭제
-        new_items = []
+        # 리스트 출력
+        st.caption("🔻 공제 제외 항목 (회사 식대, 자재 등)")
         rows_to_del = []
-        for i, item in enumerate(st.session_state.card_items):
-            cc1, cc2, cc3, cc4 = st.columns([2, 1.5, 1, 0.5])
+        for i, item in enumerate(st.session_state.card_exclude_items):
+            cc1, cc2, cc3 = st.columns([2, 1, 0.5])
             cc1.text(item["desc"])
             cc2.text(f"{item['amt']:,}원")
-            cc3.markdown("☑제외" if item["ex"] else "☐공제")
-            if cc4.button("🗑️", key=f"del_card_{i}"): rows_to_del.append(i)
+            if cc3.button("🗑️", key=f"del_cex_{i}"): rows_to_del.append(i)
         
-        # 삭제 처리
-        for i in sorted(rows_to_del, reverse=True): del st.session_state.card_items[i]
+        for i in sorted(rows_to_del, reverse=True): del st.session_state.card_exclude_items[i]
         if rows_to_del: st.rerun()
 
-        # 신규 추가
-        with st.form("add_card_item"):
-            ac1, ac2, ac3, ac4 = st.columns([2, 1.5, 1, 0.8])
-            n_desc = ac1.text_input("내역", placeholder="예: 식대, 자재")
+        # 신규 추가 (Form 사용으로 깜빡임 최소화 시도)
+        with st.form("add_card_ex_item", clear_on_submit=True):
+            ac1, ac2, ac3 = st.columns([2, 1.5, 1])
+            n_desc = ac1.text_input("제외 내역", placeholder="예: 식대")
             n_amt = ac2.number_input("금액", step=1000)
-            n_ex = ac3.checkbox("제외(식대)", help="체크 시 급여에서 차감되지 않음")
-            if ac4.form_submit_button("추가"):
+            if ac3.form_submit_button("추가"):
                 if n_desc and n_amt > 0:
-                    st.session_state.card_items.append({"desc": n_desc, "amt": int(n_amt), "ex": n_ex})
+                    st.session_state.card_exclude_items.append({"desc": n_desc, "amt": int(n_amt)})
                     st.rerun()
 
-        # 총액 계산
-        calc_card_total = sum([x["amt"] for x in st.session_state.card_items])
-        calc_card_ex = sum([x["amt"] for x in st.session_state.card_items if x["ex"]])
-        calc_card_real = calc_card_total - calc_card_ex
+        # 총액 계산 및 저장
+        calc_exclude_sum = sum([x["amt"] for x in st.session_state.card_exclude_items])
+        calc_real_deduct = new_card_total - calc_exclude_sum
         
-        st.caption(f"💡 총 카드: {calc_card_total:,} | 제외: {calc_card_ex:,} | **실 공제: {calc_card_real:,}원**")
+        st.markdown(f"<div style='background:#fff0f0; padding:10px; border-radius:5px; text-align:center;'>💳 실 공제액: <b>{new_card_total:,}</b> (총액) - <b>{calc_exclude_sum:,}</b> (제외) = <b style='color:red; font-size:18px;'>{calc_real_deduct:,}원</b></div>", unsafe_allow_html=True)
         
         if st.button("💾 공제 내역 저장 (정산일 기준)", use_container_width=True):
-            # 상세 내역 직렬화
-            detail_str = "||".join([f"{x['desc']}__{x['amt']}__{'O' if x['ex'] else 'X'}" for x in st.session_state.card_items])
+            # 상세 내역 직렬화 (제외 항목만 'O'로 저장)
+            detail_str = "||".join([f"{x['desc']}__{x['amt']}__O" for x in st.session_state.card_exclude_items])
             
             tgt_row = last_row.iloc[0].to_dict() if not last_row.empty else {"직원명": user_name, "날짜": ed_str, "입력시간": get_now_kst().strftime("%H:%M:%S")}
             tgt_row.update({
                 "현금": new_cash, 
-                "카드": calc_card_total, 
-                "카드제외": calc_card_ex, 
+                "카드": new_card_total,      # 총액 저장
+                "카드제외": calc_exclude_sum, # 제외 총액 저장
                 "기타": new_etc,
                 "카드상세": detail_str
             })
             if save_to_gsheet(user_name, tgt_row):
                 st.success("공제 내역이 저장되었습니다!"); time.sleep(1); st.rerun()
 
-    if not df_all.empty:
-        df_all['date_dt'] = pd.to_datetime(df_all['날짜']).dt.date
-        p_df = df_all[(df_all['date_dt'] >= s_dt) & (df_all['date_dt'] <= e_dt)].sort_values("날짜")
-        if not p_df.empty:
-            if sal_cfg.get("apply_global"):
-                t_inc = safe_int(p_df["인센티브"].sum())
-                t_ov = safe_int(p_df["시간수당"].sum())
-                t_items = sum([safe_int(p_df[f"item{i+1}"].sum()) * safe_int(it_p[i]) for i in range(7)])
-                total_sum_val = t_inc + t_ov + t_items
-                t_cash = safe_int(p_df["현금"].sum()) if "현금" in p_df.columns else 0
-                t_card = safe_int(p_df["카드"].sum()) if "카드" in p_df.columns else 0
-                t_card_ex = safe_int(p_df["카드제외"].sum()) if "카드제외" in p_df.columns else 0
-                t_etc = safe_int(p_df["기타"].sum()) if "기타" in p_df.columns else 0
-            else:
-                total_sum_val = safe_int(p_df["합계"].sum()); t_inc = safe_int(p_df["인센티브"].sum()); t_ov = safe_int(p_df["시간수당"].sum()); t_items = total_sum_val - t_inc - t_ov
-                t_cash = safe_int(p_df["현금"].sum()) if "현금" in p_df.columns else 0
-                t_card = safe_int(p_df["카드"].sum()) if "카드" in p_df.columns else 0
-                t_card_ex = safe_int(p_df["카드제외"].sum()) if "카드제외" in p_df.columns else 0
-                t_etc = safe_int(p_df["기타"].sum()) if "기타" in p_df.columns else 0
-                
-            t_card_real = t_card - t_card_ex
-            final_pay = int(b + total_sum_val - ins - t_cash - t_card_real - t_etc); combined_inc = t_inc + t_items + t_ov
-            
-            
-            # 리포트 요약 카드 HTML 생성 (구조 개선: 급여 소계 -> 매장 현금 차감 -> 실 수령액)
-            subtotal_pay = int(b + total_sum_val - ins)
-            
-            summary_html = f'<div class="calc-detail">'
-            # 1. 정식 급여 파트
-            summary_html += f'<div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div>'
-            summary_html += f'<div class="calc-line"><span>인센티브</span> <span>+ {combined_inc:,}원</span></div>'
-            summary_html += f'<div class="calc-line" style="color:red;"><span>보험료</span> <span>- {ins:,}원</span></div>'
-            
-            # 2. 공제 파트 (현금, 카드, 기타)
-            if t_cash > 0 or t_card_real > 0 or t_etc > 0:
-                 summary_html += f'<div style="border-top:1px dashed #ddd; margin:8px 0; padding-top:8px;"></div>'
-                 summary_html += f'<div class="calc-line" style="color:#555;"><span>급여 합계</span> <span>{subtotal_pay:,}원</span></div>'
-                 if t_cash > 0: summary_html += f'<div class="calc-line" style="color:#ef6c00;"><span>매장 현금</span> <span>- {t_cash:,}원</span></div>'
-                 if t_card_real > 0: summary_html += f'<div class="calc-line" style="color:#ef6c00;"><span>카드 사용 ({t_card:,}-{t_card_ex:,})</span> <span>- {t_card_real:,}원</span></div>'
-                 if t_etc > 0: summary_html += f'<div class="calc-line" style="color:#ef6c00;"><span>기타 공제</span> <span>- {t_etc:,}원</span></div>'
-                 
-            # 3. 최종 수령액
-            summary_html += f'<div class="calc-total"><div class="calc-line"><span>💰 실 수령액</span> <span>{final_pay:,}원</span></div></div>'
-            summary_html += '</div>'
-            st.markdown(summary_html, unsafe_allow_html=True)
-            h_base = ["날짜", "인센"] + (["수당"] if is_ov_staff else []); hds = h_base + [n[:2] for n in it_n] + ["합계"]
-            r_html, i_sums = "", [0]*7
-            for _, r in p_df.iterrows():
-                md = datetime.strptime(r['날짜'], '%Y-%m-%d').strftime('%m/%d')
-                if r['비고'] == "휴무": r_html += f"<tr><td style='font-weight:bold;'>{md}</td><td colspan='{len(hds)-1}' style='color:orange;'>🌴휴무</td></tr>"
-                else:
-                    row_inc, row_ov = safe_int(r['인센티브']), safe_int(r.get('시간수당', 0)); 
-                    for i in range(1, 8): i_sums[i-1] += safe_int(r[f'item{i}'])
-                    row_total = (row_inc + row_ov + sum([safe_int(r[f'item{i+1}']) * safe_int(it_p[i]) for i in range(7)])) if sal_cfg.get("apply_global") else safe_int(r['합계'])
-                    disp_inc, ov_td = (row_inc if is_ov_staff else row_inc + row_ov), (f"<td>{row_ov:,}</td>" if is_ov_staff else "")
-                    it_tds = "".join([f"<td>{safe_int(r[f'item{i}'])}</td>" for i in range(1, 8)])
-                    r_html += f"<tr><td style='font-weight:bold;'>{md}</td><td>{disp_inc:,}</td>{ov_td}{it_tds}<td style='color:blue;'>{row_total:,}</td></tr>"
-            r_html += f"<tr class='total-row'><td>합계</td><td>{(t_inc if is_ov_staff else t_inc + t_ov):,}</td>" + (f"<td>{t_ov:,}</td>" if is_ov_staff else "") + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{total_sum_val:,}</td></tr>"
-            st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{x}</th>" for x in hds])}</tr>{r_html}</table>', unsafe_allow_html=True)
-        else:
-            st.info("📉 해당 기간에 조회된 데이터가 없습니다.")
-    else:
-        st.info("📉 저장된 데이터가 없습니다.")
+    # 리포트 출력 (Refactored Function Call)
+    render_monthly_report(df_all, e_dt, sal_cfg, is_ov_staff, user_name, readonly=False)
