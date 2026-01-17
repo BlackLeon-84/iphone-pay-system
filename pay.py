@@ -328,25 +328,31 @@ with tab_daily:
             st.session_state[f"it_input_{i}"] = val
         st.rerun()
 
-    prv = curr.replace(day=1) - timedelta(days=1)
-    t_st = get_safe_date(prv.year, prv.month, s_d)
-
-for i in range(12):
-    st_dt = get_safe_date((t_st - timedelta(days=32*i)).year, (t_st - timedelta(days=32*i)).month, s_d)
-    # 이전달 계산 시 년/월 보정 로직 보완
-    if i > 0:
-        nxt_m = t_st.replace(day=1) - timedelta(days=1)
-        # 매월 1일에서 하루 빼서 전달로 간 뒤, start_day 적용
-        # 정확한 logic: t_st에서 한달씩 뒤로 가야함 using relativedelta logic roughly
-        y, m = t_st.year, t_st.month - i
-        while m < 1: y -= 1; m += 12
-        st_dt = get_safe_date(y, m, s_d)
+# --- 탭 2: 월간 정산 ---
+with tab_report:
+    st.header("📊 월간 정산 리포트")
+    s_d, b, ins = safe_int(sal_cfg['start_day'], 13), safe_int(sal_cfg['base_salary']), safe_int(sal_cfg['insurance'])
     
-    ed_dt = get_safe_date((st_dt + timedelta(days=33)).year, (st_dt + timedelta(days=33)).month, s_d) - timedelta(days=1)
-    # label format: 2025년 02월
-    lbl_m = ed_dt.strftime("%Y년 %m월")
-    m_opts.append(lbl_m)
-    m_ranges.append((st_dt, ed_dt))
+    # 월별 옵션 생성 (최근 12개월)
+    m_opts, m_ranges = [], []
+    curr = date.today()
+    
+    if curr.day >= s_d: t_st = date(curr.year, curr.month, s_d)
+    else:
+        prv = curr.replace(day=1) - timedelta(days=1)
+        t_st = get_safe_date(prv.year, prv.month, s_d)
+
+    for i in range(12):
+        st_dt = get_safe_date((t_st - timedelta(days=32*i)).year, (t_st - timedelta(days=32*i)).month, s_d)
+        if i > 0:
+            y, m = t_st.year, t_st.month - i
+            while m < 1: y -= 1; m += 12
+            st_dt = get_safe_date(y, m, s_d)
+        
+        ed_dt = get_safe_date((st_dt + timedelta(days=33)).year, (st_dt + timedelta(days=33)).month, s_d) - timedelta(days=1)
+        lbl_m = ed_dt.strftime("%Y년 %m월")
+        m_opts.append(lbl_m)
+        m_ranges.append((st_dt, ed_dt))
 
     st.subheader("🗓️ 정산 월 선택")
     sel_idx = st.selectbox("리포트 기간", range(len(m_opts)), format_func=lambda x: m_opts[x])
