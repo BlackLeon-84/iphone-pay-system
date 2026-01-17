@@ -5,12 +5,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.0.5"
+SW_VERSION = "v3.2.5"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [스마트 레이아웃] 아이폰 100% 최적화 CSS ---
+# --- [스마트 레이아웃] 아이폰 100% 최적화 CSS (v3.0.5 유지) ---
 st.markdown(f"""
     <style>
     /* 1. 전체 여백 최적화 */
@@ -74,7 +74,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 연결 ---
+# --- 구글 시트 연결 (직원별 탭 관리 로직 추가) ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
@@ -87,29 +87,42 @@ def get_gsheet_client():
         return gspread.authorize(creds)
     st.stop()
 
-def load_data_from_gsheet():
+def get_user_worksheet(user_name):
+    client = get_gsheet_client()
+    spreadsheet = client.open(SHEET_NAME)
     try:
-        client = get_gsheet_client()
-        sheet = client.open(SHEET_NAME).sheet1
+        return spreadsheet.worksheet(user_name)
+    except gspread.exceptions.WorksheetNotFound:
+        # 탭이 없으면 새로 생성하고 헤더 추가
+        new_sheet = spreadsheet.add_worksheet(title=user_name, rows="1000", cols="20")
+        new_sheet.append_row(["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
+        return new_sheet
+
+def load_data_from_gsheet(user_name):
+    try:
+        sheet = get_user_worksheet(user_name)
         df = pd.DataFrame(sheet.get_all_records())
-        num_cols = ["인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계"]
-        for col in num_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        if not df.empty:
+            num_cols = ["인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계"]
+            for col in num_cols:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
         return df
     except: return pd.DataFrame()
 
-def save_to_gsheet(df_row):
+def save_to_gsheet(user_name, df_row):
     try:
-        client = get_gsheet_client()
-        sheet = client.open(SHEET_NAME).sheet1
+        sheet = get_user_worksheet(user_name)
         all_data = sheet.get_all_values()
         row_idx = -1
+        # 날짜가 같은 행이 있는지 확인 (직원명은 이미 탭으로 분리됨)
         for i, row in enumerate(all_data):
-            if len(row) > 1 and row[0] == df_row['직원명'] and row[1] == df_row['날짜']:
+            if len(row) > 1 and row[1] == df_row['날짜']:
                 row_idx = i + 1; break
-        if row_idx != -1: sheet.update(range_name=f"A{row_idx}", values=[list(df_row.values())])
-        else: sheet.append_row(list(df_row.values()))
+        if row_idx != -1: 
+            sheet.update(range_name=f"A{row_idx}", values=[list(df_row.values())])
+        else: 
+            sheet.append_row(list(df_row.values()))
         return True
     except: return False
 
@@ -123,7 +136,7 @@ if "config" not in st.session_state:
                                "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
                                "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]}
 
-# --- 로그인 ---
+# --- 로그인 (v3.0.5 디자인 100% 유지) ---
 if not st.session_state.logged_in:
     st.title("🔐 로그인")
     user_id = st.selectbox("직원 선택", options=STAFF_LIST)
@@ -133,10 +146,10 @@ if not st.session_state.logged_in:
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     
-    # 하단 수정 내역 로그 추가
+    # 하단 수정 내역 로그 추가 (v3.0.5 유지)
     st.markdown(f"""
         <div class="update-log">
-            <b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>
+            <b>🚀 소프트웨어 버전: v3.0.5</b><br>
             • 로그인 페이지 '입장' 버튼 크기 확대 및 디자인 강조<br>
             • 날짜별 최종 저장 시간 로그 기능 복구<br>
             • 아이폰 가로 정렬 버튼 레이아웃 최적화 (v3.0.0 기준)<br>
@@ -169,14 +182,15 @@ with st.sidebar:
 
 # --- 메인 화면 ---
 st.markdown(f'<div class="version-tag">{SW_VERSION}</div>', unsafe_allow_html=True)
-df_all = load_data_from_gsheet()
+# 로그인한 사용자의 탭에서 데이터 로드
+df_all = load_data_from_gsheet(user_name)
 st.write(f"### 💼 {user_name}님 실적")
 
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
 # --- 저장 시간 로그 창 ---
-existing_row = df_all[(df_all["날짜"] == str_date) & (df_all["직원명"] == user_name)] if not df_all.empty else pd.DataFrame()
+existing_row = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
 if not existing_row.empty:
     save_time = existing_row.iloc[0].get('입력시간', '기록없음')
     st.markdown(f'<div class="save-log">📝 {save_time}에 저장된 기록이 있습니다.</div>', unsafe_allow_html=True)
@@ -185,7 +199,7 @@ else:
 
 if st.button("🌴 오늘 휴무 등록", use_container_width=True):
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
-    if save_to_gsheet(row): st.rerun()
+    if save_to_gsheet(user_name, row): st.rerun()
 
 st.write("**📅 최근 7일**")
 weekly_html = '<div class="weekly-box">'
@@ -193,7 +207,8 @@ today_kst = get_now_kst().date()
 for i in range(6, -1, -1):
     target_d = today_kst - timedelta(days=i)
     target_str = target_d.strftime("%Y-%m-%d")
-    day_data = df_all[(df_all["날짜"] == target_str) & (df_all["직원명"] == user_name)] if not df_all.empty else pd.DataFrame()
+    # 현재 로그인한 사용자의 데이터에서 확인
+    day_data = df_all[df_all["날짜"] == target_str] if not df_all.empty else pd.DataFrame()
     icon = "✅" if not day_data.empty and day_data.iloc[0]['비고'] != "휴무" else ("🌴" if not day_data.empty else "⚪")
     weekly_html += f'<div style="text-align:center;"><div style="font-size:10px;">{target_d.day}일</div><div>{icon}</div></div>'
 st.markdown(weekly_html + '</div>', unsafe_allow_html=True)
@@ -244,7 +259,7 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
            "item1": counts[0], "item2": counts[1], "item3": counts[2], "item4": counts[3], 
            "item5": counts[4], "item6": counts[5], "item7": counts[6], 
            "합계": st.session_state.current_incen_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
-    if save_to_gsheet(row): st.success("성공적으로 저장되었습니다."); st.rerun()
+    if save_to_gsheet(user_name, row): st.success("성공적으로 저장되었습니다."); st.rerun()
 
 st.divider()
 st.subheader("📊 정산 리포트")
@@ -253,7 +268,8 @@ start_dt = date(sel_date.year, sel_date.month, s_day) if sel_date.day >= s_day e
 end_dt = (start_dt + timedelta(days=32)).replace(day=s_day) - timedelta(days=1)
 
 if not df_all.empty:
-    p_df = df_all[(df_all["직원명"] == user_name) & (pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
+    # 이미 해당 사용자의 데이터만 로드된 상태
+    p_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
     if not p_df.empty:
         total_extra = p_df["합계"].sum()
         total_incen = p_df["인센티브"].sum()
