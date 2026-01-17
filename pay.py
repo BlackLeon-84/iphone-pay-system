@@ -273,7 +273,6 @@ if not st.session_state.logged_in:
                 st.error("비밀번호가 일치하지 않습니다.")
 
     st.markdown(f'''
-    st.markdown(f'''
     <div class="admin-log">
         <b>🕒 {get_now_kst().strftime("%Y-%m-%d")} 업데이트 ({SW_VERSION})</b><br>
         <div style="margin-top:5px; line-height:1.4;">
