@@ -7,7 +7,7 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.4.7"
+SW_VERSION = "v3.4.8"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -78,18 +78,12 @@ def get_spreadsheet():
 def get_config_worksheet():
     ss = get_spreadsheet()
     try:
-        # 시트 목록 전체 조회를 피하고 바로 접근 (API 호출 절약)
         return ss.worksheet("config")
     except gspread.exceptions.WorksheetNotFound:
         headers = ["직원명", "기본급", "정산일", "보험료"] + [f"item{i}_name" for i in range(1,8)] + [f"item{i}_price" for i in range(1,8)]
         ws = ss.add_worksheet(title="config", rows="100", cols="20")
         ws.append_row(headers)
         return ws
-    except Exception as e:
-        if "APIError" in str(e):
-            st.error("구글 서버 응답 지연입니다. 잠시 후 새로고침 해주세요.")
-            st.stop()
-        raise e
 
 def get_dynamic_staff_list():
     try:
@@ -177,9 +171,6 @@ def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
 # --- 메인 코드 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
-
-# 시트 목록은 최초 한 번 혹은 필요할 때만 불러오기 위해 세션 활용 가능하지만, 
-# 현재는 동적 리스트가 필요하므로 최적화된 함수 호출
 STAFF_LIST = get_dynamic_staff_list()
 
 if not st.session_state.logged_in:
@@ -193,7 +184,7 @@ if not st.session_state.logged_in:
             st.session_state.user_name = user_id
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 업데이트</b><br>• 구글 API 속도 제한 오류 완화<br>• 디자인 완벽 복구 및 유지<br>• 직원별 개별 설정 기능 강화</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 업데이트</b><br>• f-string 구문 오류(SyntaxError) 수정<br>• 구글 API 속도 제한 최적화<br>• 아이폰 최적화 디자인 유지</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
@@ -311,5 +302,8 @@ if not df_all.empty:
                 it_tds = "".join([f"<td>{safe_int(r[f'item{i}'])}</td>" for i in range(1, 8)])
                 for i in range(1, 8): i_sums[i-1] += safe_int(r[f'item{i}'])
                 r_html += f"<tr><td>{d}</td><td>{safe_int(r['인센티브']):,}</td>{it_tds}<td style='color:blue;'>{safe_int(r['합계']):,}</td></tr>"
-        r_html += f"<tr class='total-row'><td>합</td><td>{safe_int(p_df['인센티브'].sum():,) if not p_df.empty else 0}</td>" + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{t_ex:,}</td></tr>"
+        
+        # SyntaxError 해결: 합계 계산을 f-string 밖에서 미리 처리
+        total_inc_val = safe_int(p_df['인센티브'].sum()) if not p_df.empty else 0
+        r_html += f"<tr class='total-row'><td>합</td><td>{total_inc_val:,}</td>" + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{t_ex:,}</td></tr>"
         st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{x}</th>" for x in hds])}</tr>{r_html}</table>', unsafe_allow_html=True)
