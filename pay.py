@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 import calendar
 
 # 소프트웨어 버전
-SW_VERSION = "v3.4.1"
+SW_VERSION = "v3.4.3"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -21,53 +21,23 @@ st.markdown(f"""
         padding-right: 10px !important;
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
-
     .section-header {{
-        font-size: 14px;
-        font-weight: bold;
-        color: #333;
-        margin: 20px 0 10px 0;
-        padding-left: 5px;
-        border-left: 4px solid #007bff;
+        font-size: 14px; font-weight: bold; color: #333; margin: 20px 0 10px 0;
+        padding-left: 5px; border-left: 4px solid #007bff;
     }}
-
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 4px !important;
-        width: 100% !important;
+        display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; width: 100% !important;
     }}
-    .st-key-incen_buttons [data-testid="stHorizontalBlock"] > div {{
-        flex: 1 1 0% !important;
-        min-width: 0 !important;
-    }}
+    .st-key-incen_buttons [data-testid="stHorizontalBlock"] > div {{ flex: 1 1 0% !important; min-width: 0 !important; }}
     .st-key-incen_buttons button {{
-        font-size: 10px !important;
-        padding: 0px 1px !important;
-        width: 100% !important;
-        min-height: 40px !important;
-        white-space: nowrap !important;
+        font-size: 10px !important; padding: 0px 1px !important; width: 100% !important; min-height: 40px !important; white-space: nowrap !important;
     }}
-
     .admin-log {{
-        font-size: 11px;
-        color: #155724;
-        background-color: #d4edda;
-        padding: 10px;
-        border-radius: 5px;
-        margin-top: 10px;
-        border: 1px solid #c3e6cb;
+        font-size: 11px; color: #155724; background-color: #d4edda; padding: 10px; border-radius: 5px; margin-top: 10px; border: 1px solid #c3e6cb;
     }}
-
     .st-key-login_btn button {{
-        height: 50px !important;
-        font-size: 18px !important;
-        font-weight: bold !important;
-        background-color: #007bff !important;
-        color: white !important;
+        height: 50px !important; font-size: 18px !important; font-weight: bold !important; background-color: #007bff !important; color: white !important;
     }}
-
     .weekly-box {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px; }}
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
     .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
@@ -79,19 +49,19 @@ st.markdown(f"""
 
 # --- 시트 및 설정 로직 ---
 SHEET_NAME = "아이폰정산"
-STAFF_LIST = ["태완", "남근", "성훈"]
+BASE_STAFF = ["태완", "남근", "성훈"]
 
 @st.cache_resource
 def get_gsheet_client():
+    if "gcp_service_account" not in st.secrets:
+        st.error("구글 서비스 계정 설정(Secrets)이 필요합니다.")
+        st.stop()
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    if "gcp_service_account" in st.secrets:
-        creds_info = dict(st.secrets["gcp_service_account"])
-        if "private_key" in creds_info:
-            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
-        return gspread.authorize(creds)
-    st.error("구글 서비스 계정 정보가 없습니다.")
-    st.stop()
+    creds_info = dict(st.secrets["gcp_service_account"])
+    if "private_key" in creds_info:
+        creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+    creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+    return gspread.authorize(creds)
 
 @st.cache_resource
 def get_spreadsheet():
@@ -100,73 +70,87 @@ def get_spreadsheet():
 
 def get_config_worksheet():
     spreadsheet = get_spreadsheet()
-    try: return spreadsheet.worksheet("config")
+    headers = ["직원명", "기본급", "정산일", "보험료"] + [f"item{i}_name" for i in range(1,8)] + [f"item{i}_price" for i in range(1,8)]
+    try:
+        ws = spreadsheet.worksheet("config")
+        # 헤더가 어지러우면 자동 교정
+        current_headers = ws.row_values(1)
+        if not current_headers or current_headers[0] != "직원명":
+            ws.update(range_name="A1:R1", values=[headers])
+        return ws
     except:
-        new_sheet = spreadsheet.add_worksheet(title="config", rows="100", cols="20")
-        headers = ["직원명", "기본급", "정산일", "보험료"] + [f"item{i}_name" for i in range(1,8)] + [f"item{i}_price" for i in range(1,8)]
-        new_sheet.append_row(headers)
-        return new_sheet
+        ws = spreadsheet.add_worksheet(title="config", rows="100", cols="20")
+        ws.append_row(headers)
+        return ws
+
+def get_dynamic_staff_list():
+    sheet = get_config_worksheet()
+    names = sheet.col_values(1)[1:] # 첫 줄(헤더) 제외
+    full_list = sorted(list(set(BASE_STAFF + [n for n in names if n])))
+    return full_list
 
 def load_staff_salary_config(name):
     sheet = get_config_worksheet()
-    data = sheet.get_all_records()
+    rows = sheet.get_all_values()
     
-    # 기본값 설정
     default_names = ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2']
     default_prices = [9000, 18000, 9000, 15000, 23000, 0, 0]
     res = {"base_salary": 3500000, "start_day": 13, "insurance": 104760, "item_names": default_names, "item_prices": default_prices}
     
-    for row in data:
-        if row.get("직원명") == name:
-            res["base_salary"] = int(row.get("기본급", 3500000))
-            res["start_day"] = int(row.get("정산일", 13))
-            res["insurance"] = int(row.get("보험료", 104760))
-            
-            # 품목 설정 로드
-            item_names = []
-            item_prices = []
-            for i in range(1, 8):
-                n = row.get(f"item{i}_name", default_names[i-1])
-                p = row.get(f"item{i}_price", default_prices[i-1])
-                item_names.append(n if n else default_names[i-1])
-                item_prices.append(int(p) if p != "" else default_prices[i-1])
-            res["item_names"] = item_names
-            res["item_prices"] = item_prices
-            return res
+    if len(rows) > 1:
+        headers = rows[0]
+        for row in rows[1:]:
+            if row and row[0] == name:
+                d = {headers[i]: row[i] for i in range(min(len(headers), len(row)))}
+                res["base_salary"] = int(d.get("기본급", 3500000)) if d.get("기본급") else 3500000
+                res["start_day"] = int(d.get("정산일", 13)) if d.get("정산일") else 13
+                res["insurance"] = int(d.get("보험료", 104760)) if d.get("보험료") else 104760
+                
+                item_names, item_prices = [], []
+                for i in range(1, 8):
+                    n = d.get(f"item{i}_name", default_names[i-1])
+                    p = d.get(f"item{i}_price", default_prices[i-1])
+                    item_names.append(n if n else default_names[i-1])
+                    item_prices.append(int(p) if p else default_prices[i-1])
+                res["item_names"], res["item_prices"] = item_names, item_prices
+                return res
 
-    # 정보가 없으면 기본값으로 시트에 한 행 추가
+    # 관리자 설정이 없으면 기본값으로 저장하고 시트도 생성
     save_staff_salary_config(name, res["base_salary"], res["start_day"], res["insurance"], res["item_names"], res["item_prices"])
+    get_user_worksheet(name) # 데이터 시트 자동 생성
     return res
 
 def save_staff_salary_config(name, base, day, ins, item_names, item_prices):
     sheet = get_config_worksheet()
-    all_rows = sheet.get_all_values()
+    rows = sheet.get_all_values()
     row_idx = -1
-    for i, row in enumerate(all_rows):
+    for i, row in enumerate(rows):
         if row and row[0] == name: row_idx = i + 1; break
     
     new_data = [name, int(base), int(day), int(ins)] + item_names + item_prices
-    if row_idx != -1: 
+    if row_idx != -1:
         col_end = chr(ord('A') + len(new_data) - 1)
         sheet.update(range_name=f"A{row_idx}:{col_end}{row_idx}", values=[new_data])
-    else: 
+    else:
         sheet.append_row(new_data)
 
 def get_user_worksheet(user_name):
     spreadsheet = get_spreadsheet()
     try: return spreadsheet.worksheet(user_name)
     except:
-        new_sheet = spreadsheet.add_worksheet(title=user_name, rows="1000", cols="20")
-        new_sheet.append_row(["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
-        return new_sheet
+        ws = spreadsheet.add_worksheet(title=user_name, rows="1000", cols="20")
+        ws.append_row(["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
+        return ws
 
 def load_data_from_gsheet(user_name):
     try:
         sheet = get_user_worksheet(user_name)
-        df = pd.DataFrame(sheet.get_all_records())
-        if not df.empty:
-            for col in ["인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계"]:
-                if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        data = sheet.get_all_values()
+        if len(data) <= 1: return pd.DataFrame()
+        df = pd.DataFrame(data[1:], columns=data[0])
+        cols = ["인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계"]
+        for col in cols:
+            if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
         return df
     except: return pd.DataFrame()
 
@@ -177,17 +161,14 @@ def save_to_gsheet(user_name, df_row):
         row_idx = -1
         for i, row in enumerate(all_data):
             if len(row) > 1 and row[1] == df_row['날짜']: row_idx = i + 1; break
-            
         row_values = list(df_row.values())
-        if row_idx != -1: 
+        if row_idx != -1:
             col_end = chr(ord('A') + len(row_values) - 1)
             sheet.update(range_name=f"A{row_idx}:{col_end}{row_idx}", values=[row_values])
-        else: 
+        else:
             sheet.append_row(row_values)
         return True
-    except Exception as e:
-        st.error(f"저장 오류: {e}")
-        return False
+    except: return False
 
 def get_safe_date(year, month, day):
     last_day = calendar.monthrange(year, month)[1]
@@ -195,8 +176,9 @@ def get_safe_date(year, month, day):
 
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 세션 설정 ---
+# --- 세션 및 데이터 로드 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
+STAFF_LIST = get_dynamic_staff_list()
 
 # --- 로그인 ---
 if not st.session_state.logged_in:
@@ -205,12 +187,12 @@ if not st.session_state.logged_in:
     admin_pw = st.text_input("비번", type="password") if user_id == "태완" else ""
     if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
-        else: 
+        else:
             st.session_state.logged_in = True
             st.session_state.user_name = user_id
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 품목 및 가격 구글 시트 영구 저장<br>• API 속도 최적화 (캐싱 적용)<br>• 데이터 저장 안정성 강화</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 직원별 시트 및 설정 자동 분리<br>• 신규 직원 로그인 시 시트 자동 생성<br>• 구글 시트 구조 실시간 최적화</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name = st.session_state.user_name
@@ -224,7 +206,7 @@ with st.sidebar:
         target_staff = st.selectbox("수정 대상 직원", STAFF_LIST)
         t_sal = load_staff_salary_config(target_staff)
 
-        new_names = []; new_prices = []
+        new_names, new_prices = [], []
         for i in range(7):
             c1, c2 = st.columns(2)
             n = c1.text_input(f"명칭{i+1}", value=t_sal["item_names"][i], key=f"sn_{target_staff}_{i}")
@@ -236,21 +218,17 @@ with st.sidebar:
         s_day = st.slider("정산 시작일", 1, 31, value=min(max(1, t_sal["start_day"]), 31))
         ins = st.number_input("보험료", value=t_sal["insurance"])
 
-        if st.button(f"💿 {target_staff} 설정 시트 저장", use_container_width=True):
+        if st.button(f"💿 {target_staff} 설정 즉시 저장", use_container_width=True):
             save_staff_salary_config(target_staff, base, s_day, ins, new_names, new_prices)
             get_user_worksheet(target_staff)
-
-            if target_staff == user_name: 
-                # 본인 설정이면 즉시 반영
-                st.session_state.salary_cfg = load_staff_salary_config(user_name)
-            
-            st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] {target_staff} 설정 저장 완료"
+            if target_staff == user_name: st.session_state.salary_cfg = load_staff_salary_config(user_name)
+            st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] {target_staff} 정보 저장 완료"
             st.rerun()
         if "admin_log" in st.session_state:
             st.markdown(f'<div class="admin-log">{st.session_state.admin_log}</div>', unsafe_allow_html=True)
-    if st.button("로그아웃"): 
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
+            
+    if st.button("로그아웃"):
+        for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
 # --- 메인 화면 ---
@@ -271,15 +249,15 @@ if st.button("🌴 오늘 휴무 등록", use_container_width=True):
 
 # --- 최근 7일 기록 ---
 st.write("**📅 최근 7일 기록**")
-weekly_html = '<div class="weekly-box">'
+weekly_box_html = '<div class="weekly-box">'
 today_kst = get_now_kst().date()
 for i in range(6, -1, -1):
     target_d = today_kst - timedelta(days=i)
     target_str = target_d.strftime("%Y-%m-%d")
     day_data = df_all[df_all["날짜"] == target_str] if not df_all.empty else pd.DataFrame()
     icon = "✅" if not day_data.empty and day_data.iloc[0]['비고'] != "휴무" else ("🌴" if not day_data.empty else "⚪")
-    weekly_html += f'<div style="text-align:center;"><div style="font-size:10px;">{target_d.day}일</div><div>{icon}</div></div>'
-st.markdown(weekly_html + '</div>', unsafe_allow_html=True)
+    weekly_box_html += f'<div style="text-align:center;"><div style="font-size:10px;">{target_d.day}일</div><div>{icon}</div></div>'
+st.markdown(weekly_box_html + '</div>', unsafe_allow_html=True)
 
 st.divider()
 
@@ -293,7 +271,6 @@ if "inc_sum" not in st.session_state or st.session_state.get("last_date") != str
 
 st.write(f"현재 합계: **{st.session_state.inc_sum:,}원**")
 add_amt = st.number_input("인센 금액", 0, step=1000, value=0, label_visibility="collapsed")
-
 with st.container(key="incen_buttons"):
     c1, c2, c3 = st.columns(3)
     if c1.button("➕추가", use_container_width=True):
@@ -307,9 +284,7 @@ with st.container(key="incen_buttons"):
 # --- 품목 섹션 ---
 st.markdown('<div class="section-header">📦 품목 수량 입력</div>', unsafe_allow_html=True)
 counts = []
-item_names = sal_cfg["item_names"]
-item_prices = sal_cfg["item_prices"]
-
+item_names, item_prices = sal_cfg["item_names"], sal_cfg["item_prices"]
 for i in range(0, 6, 2):
     c1, c2 = st.columns(2)
     with c1: counts.append(st.number_input(item_names[i], 0, value=int(existing_row.iloc[0][f'item{i+1}']) if is_edit else 0, key=f"it_{i}"))
@@ -317,28 +292,23 @@ for i in range(0, 6, 2):
 counts.append(st.number_input(item_names[6], 0, value=int(existing_row.iloc[0]['item7']) if is_edit else 0, key="it_6"))
 
 if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
-    item_total = sum([int(c) * int(p) for c, p in zip(counts, item_prices)])
+    sub_total = sum([int(c) * int(p) for c, p in zip(counts, item_prices)])
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, 
            "item1": counts[0], "item2": counts[1], "item3": counts[2], "item4": counts[3], 
            "item5": counts[4], "item6": counts[5], "item7": counts[6], 
-           "합계": st.session_state.inc_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
-    if save_to_gsheet(user_name, row): 
-        st.success("저장 완료!")
-        st.rerun()
+           "합계": st.session_state.inc_sum + sub_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
+    if save_to_gsheet(user_name, row): st.success("저장 완료!"); st.rerun()
 
 # --- 정산 리포트 ---
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day, base, ins = sal_cfg['start_day'], sal_cfg['base_salary'], sal_cfg['insurance']
-
-if sel_date.day >= s_day:
-    start_dt = get_safe_date(sel_date.year, sel_date.month, s_day)
+if sel_date.day >= s_day: start_dt = get_safe_date(sel_date.year, sel_date.month, s_day)
 else:
-    prev_month_date = sel_date.replace(day=1) - timedelta(days=1)
-    start_dt = get_safe_date(prev_month_date.year, prev_month_date.month, s_day)
-
-next_month_date = (start_dt + timedelta(days=32)).replace(day=1)
-end_dt = get_safe_date(next_month_date.year, next_month_date.month, s_day) - timedelta(days=1)
+    prev = sel_date.replace(day=1) - timedelta(days=1)
+    start_dt = get_safe_date(prev.year, prev.month, s_day)
+end_dt = (start_dt + timedelta(days=32)).replace(day=1)
+end_dt = get_safe_date(end_dt.year, end_dt.month, s_day) - timedelta(days=1)
 
 if not df_all.empty:
     df_all['date_dt'] = pd.to_datetime(df_all['날짜']).dt.date
@@ -348,7 +318,7 @@ if not df_all.empty:
         st.write(f"**🏦 예상 수령: {int(base + total_extra - ins):,}원**")
         st.markdown(f'<div style="font-size:11px; color:#888; margin-top:-5px;">({start_dt.strftime("%m/%d")}~{end_dt.strftime("%m/%d")} 정산 기준)</div>', unsafe_allow_html=True)
         headers = ["날", "인센"] + [n[:1] for n in item_names] + ["합계"]
-        rows_html = ""; item_sums = [0]*7
+        rows_html, item_sums = "", [0]*7
         for _, r in p_df.iterrows():
             d = datetime.strptime(r['날짜'], '%Y-%m-%d').day
             if r['비고'] == "휴무": rows_html += f"<tr><td>{d}</td><td colspan='9' style='color:orange;'>🌴휴무</td></tr>"
