@@ -7,7 +7,7 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.5.3"
+SW_VERSION = "v3.6.0"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -51,8 +51,10 @@ st.markdown(f"""
     .status-missing {{ background-color: #fff3e0; color: #ef6c00; border: 1px solid #ffe0b2; }}
 
     .weekly-box {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px; }}
-    .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
-    .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
+    
+    /* 리포트 표 최적화 (아이폰 한 화면용) */
+    .report-table {{ width: 100%; font-size: 9.5px; text-align: center; border-collapse: collapse; }}
+    .report-table th, .report-table td {{ border: 1px solid #eee; padding: 4px 1px; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     .update-log {{ font-size: 11px; color: #777; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 30px; border: 1px solid #eee; }}
     
@@ -61,12 +63,18 @@ st.markdown(f"""
     }}
     .inc-item {{ display: inline-block; background: #eee; padding: 2px 6px; border-radius: 4px; margin: 2px; }}
     
-    .calc-detail {{ font-size: 11px; color: #888; margin-top: 5px; background: #fcfcfc; padding: 8px; border-radius: 5px; border-left: 3px solid #ddd; }}
+    /* [v3.6.0] 계산 상세 내역 디자인 강화 */
+    .calc-detail {{ 
+        font-size: 13px; color: #333; margin: 10px 0; background: #f0f7ff; 
+        padding: 15px; border-radius: 10px; border: 1px solid #c2e0ff;
+        line-height: 1.8;
+    }}
+    .calc-line {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
+    .calc-total {{ font-size: 18px; font-weight: bold; color: #007bff; border-top: 1px dashed #abc; padding-top: 10px; margin-top: 10px; }}
     
     [data-testid="stSidebar"] .st-at {{ font-size: 12px; }}
     [data-testid="stSidebar"] .stSubheader {{ font-size: 14px; font-weight: bold; color: #007bff; margin-top: 15px; }}
 
-    /* 보기 전용 정보 상자 */
     .info-box {{
         background: #fafafa; border: 1px solid #eee; padding: 10px; border-radius: 8px; font-size: 12px; line-height: 1.6;
     }}
@@ -82,7 +90,6 @@ ORDERED_STAFF = ["태완", "남근", "성훈"]
 def safe_int(val, default=0):
     try:
         if val is None: return default
-        # 콤마 제거 후 숫자로 변환
         return int(str(val).replace(",", "").strip())
     except: return default
 
@@ -169,7 +176,6 @@ def save_staff_salary_config(name, base, day, ins, names, prices):
     idx = -1
     for i, r in enumerate(rows):
         if r and r[0] == name: idx = i + 1; break
-    # [업데이트] 시트 자체의 가독성을 위해 콤마를 포함한 문자열로 저장
     data = [name, format_curr(base), safe_int(day), format_curr(ins)] + names + [format_curr(p) for p in prices]
     if idx != -1:
         col = chr(ord('A') + len(data) - 1)
@@ -206,7 +212,6 @@ def save_to_gsheet(user_name, df_row):
         idx = -1
         for i, r in enumerate(rows):
             if len(r) > 1 and r[1] == df_row['날짜']: idx = i + 1; break
-        # [업데이트] 일반 데이터 저장 시에도 콤마 포맷팅 적용
         vals = []
         for k, v in df_row.items():
             if k in ["인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계"]:
@@ -242,7 +247,7 @@ if not st.session_state.logged_in:
             st.session_state.user_name = user_id
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 시트 가독성 강화</b><br>• 구글 시트 내 숫자 콤마(,) 포함 저장<br>• 전 직원 본인 설정 정보 조회 가능<br>• 관리자 설정 UI 시인성 보강 및 버그 픽스</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 리포트 고도화</b><br>• 정산 리포트 기간 표기 및 총급여 명칭 변경<br>• 계산 상세 내역 디자인 강화 (시인성 UP)<br>• 아이폰 한 화면 최적화 리포트 표 (월/일 표기)</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
@@ -250,8 +255,6 @@ user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
 # --- 사이드바 ---
 with st.sidebar:
     st.header("⚙️ 설정")
-    
-    # [업데이트] 관리자가 아닌 일반 직원도 자신의 정보 확인 가능
     if user_name != "태완":
         st.subheader("👤 내 정보 (보기 전용)")
         info_html = f"""
@@ -276,7 +279,6 @@ with st.sidebar:
             c1, c2 = st.columns([1.2, 1])
             n = c1.text_input(f"명칭{i+1}", value=t_sal["item_names"][i], key=f"sn_{target}_{i}")
             p_val = t_sal["item_prices"][i]
-            # [업데이트] 입력창 아래에 콤마가 포함된 금액을 크게 표시하여 직관성 증대
             p = c2.number_input(f"단가{i+1}", value=p_val, step=1000, key=f"sp_{target}_{i}")
             st.markdown(f"<div style='text-align:right; font-size:11px; color:#007bff; margin-top:-10px; margin-bottom:5px; font-weight:bold;'>{p:,}원</div>", unsafe_allow_html=True)
             new_n.append(n); new_p.append(p)
@@ -285,7 +287,6 @@ with st.sidebar:
         st.subheader("💰 급여 및 보험료")
         base = st.number_input(f"기본급 수정", value=safe_int(t_sal["base_salary"]), step=10000)
         st.markdown(f"<div style='font-size:13px; color:#007bff; font-weight:bold; margin-top:-10px;'>현재: {base:,}원</div>", unsafe_allow_html=True)
-        
         ins = st.number_input(f"보험료 수정", value=safe_int(t_sal["insurance"]), step=1000)
         st.markdown(f"<div style='font-size:13px; color:#007bff; font-weight:bold; margin-top:-10px;'>현재: {ins:,}원</div>", unsafe_allow_html=True)
         
@@ -381,7 +382,8 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
 
 # --- 정산 리포트 ---
 st.divider()
-st.subheader("📊 정산 리포트")
+
+# [v3.6.0] 정산 리포트 날짜 표기 추가
 s_d, b, ins = safe_int(sal_cfg['start_day'], 13), safe_int(sal_cfg['base_salary']), safe_int(sal_cfg['insurance'])
 if sel_date.day >= s_d: s_dt = get_safe_date(sel_date.year, sel_date.month, s_d)
 else:
@@ -390,29 +392,38 @@ else:
 e_dt = (s_dt + timedelta(days=32)).replace(day=1)
 e_dt = get_safe_date(e_dt.year, e_dt.month, s_d) - timedelta(days=1)
 
+st.subheader(f"📊 정산 리포트 ({s_dt.strftime('%m/%d')} ~ {e_dt.strftime('%m/%d')})")
+
 if not df_all.empty:
     df_all['date_dt'] = pd.to_datetime(df_all['날짜']).dt.date
     p_df = df_all[(df_all['date_dt'] >= s_dt) & (df_all['date_dt'] <= e_dt)].sort_values("날짜")
     if not p_df.empty:
         t_ex = safe_int(p_df["합계"].sum())
         final_pay = int(b + t_ex - ins)
-        st.write(f"**🏦 예상 수령: {final_pay:,}원**")
+        
+        # [v3.6.0] 총급여 명칭 변경 및 디자인 강화
         st.markdown(f"""
         <div class="calc-detail">
-            <b>계산 상세:</b> {b:,}(기본급) + {t_ex:,}(실적합계) - {ins:,}(보험료) = <b>{final_pay:,}원</b><br>
-            <span style="font-size:10px; color:#aaa;">({s_dt.strftime("%m/%d")}~{e_dt.strftime("%m/%d")} 정산 기준)</span>
+            <div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div>
+            <div class="calc-line"><span>실적합계</span> <span>+ {t_ex:,}원</span></div>
+            <div class="calc-line"><span>보험료</span> <span>- {ins:,}원</span></div>
+            <div class="calc-total">
+                <div class="calc-line"><span>💰 총급여</span> <span>{final_pay:,}원</span></div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
+        # [v3.6.0] 날짜 '월/일' 형식 및 제목 2글자
         hds = ["날짜", "인센"] + [n[:2] for n in it_n] + ["합계"]
         r_html, i_sums = "", [0]*7
         for _, r in p_df.iterrows():
-            d = datetime.strptime(r['날짜'], '%Y-%m-%d').day
-            if r['비고'] == "휴무": r_html += f"<tr><td style='font-size:12px; font-weight:bold;'>{d}</td><td colspan='9' style='color:orange;'>🌴휴무</td></tr>"
+            # 날짜 월/일 형식
+            md = datetime.strptime(r['날짜'], '%Y-%m-%d').strftime('%m/%d')
+            if r['비고'] == "휴무": r_html += f"<tr><td style='font-weight:bold;'>{md}</td><td colspan='9' style='color:orange;'>🌴휴무</td></tr>"
             else:
                 it_tds = "".join([f"<td>{safe_int(r[f'item{i}'])}</td>" for i in range(1, 8)])
                 for i in range(1, 8): i_sums[i-1] += safe_int(r[f'item{i}'])
-                r_html += f"<tr><td style='font-size:12px; font-weight:bold;'>{d}</td><td>{safe_int(r['인센티브']):,}</td>{it_tds}<td style='color:blue;'>{safe_int(r['합계']):,}</td></tr>"
+                r_html += f"<tr><td style='font-weight:bold;'>{md}</td><td>{safe_int(r['인센티브']):,}</td>{it_tds}<td style='color:blue;'>{safe_int(r['합계']):,}</td></tr>"
         
         total_inc_val = safe_int(p_df['인센티브'].sum()) if not p_df.empty else 0
         r_html += f"<tr class='total-row'><td>합계</td><td>{total_inc_val:,}</td>" + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{t_ex:,}</td></tr>"
