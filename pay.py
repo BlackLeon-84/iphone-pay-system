@@ -5,18 +5,18 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.1.1"
+SW_VERSION = "v3.1.2"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [스마트 레이아웃] 아이폰 100% 최적화 CSS (v3.0.0 기반 복구) ---
+# --- [스마트 레이아웃] 아이폰 100% 최적화 CSS ---
 st.markdown(f"""
     <style>
     .block-container {{ padding-top: 3.5rem !important; max-width: 450px !important; padding-left: 10px !important; padding-right: 10px !important; }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
     
-    /* 인센티브 추가/취소/리셋 버튼 가로 고정 레이아웃 */
+    /* 인센티브 가로 버튼 3분할 고정 (절대 수정 금지) */
     .st-key-incen_buttons [data-testid="column"] {{
         width: calc(33.33% - 5px) !important;
         flex: 1 1 calc(33.33% - 5px) !important;
@@ -29,10 +29,6 @@ st.markdown(f"""
         min-height: 45px !important;
     }}
 
-    /* 로그인 버튼 */
-    .st-key-login_btn button {{ height: 50px !important; font-size: 18px !important; font-weight: bold !important; background-color: #007bff !important; color: white !important; }}
-
-    /* 가독성 및 표 스타일 */
     .total-salary {{ font-size: 20px !important; color: #007bff !important; font-weight: 800 !important; }}
     .period-text {{ font-size: 13px; color: #666; font-weight: bold; margin-bottom: 10px; }}
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
@@ -44,7 +40,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 및 유틸리티 ---
+# --- 구글 시트 연결 ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
@@ -88,7 +84,7 @@ def save_to_gsheet(user_name, df_row):
 
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 세션 초기화 ---
+# --- 초기 설정 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "config_dict" not in st.session_state:
@@ -107,11 +103,9 @@ if not st.session_state.logged_in:
     if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
-    
-    st.markdown(f"""<div class="update-log"><b>🚀 v{SW_VERSION} 패치 노트</b><br>• 모바일 가로 버튼 레이아웃 긴급 복구<br>• 숫자 입력 시 천 단위 콤마(,) 표시 기능 추가<br>• 정산 리포트 기간 자동 계산 및 가독성 개선</div>""", unsafe_allow_html=True)
     st.stop()
 
-# --- 사이드바 설정 ---
+# --- 사이드바 ---
 user_name = st.session_state.user_name
 cfg = st.session_state.config_dict[user_name]
 
@@ -131,7 +125,7 @@ with st.sidebar:
         ins = st.number_input("보험료", value=int(t_cfg["insurance"]), step=10)
         if st.button("💿 설정 저장", use_container_width=True):
             st.session_state.config_dict[target_staff].update({"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices})
-            st.session_state.admin_log.insert(0, f"{get_now_kst().strftime('%m-%d %H:%M')} | {target_staff} 저장됨")
+            st.session_state.admin_log.insert(0, f"{get_now_kst().strftime('%m-%d %H:%M')} | {target_staff} 저장")
             st.success("저장 완료"); st.rerun()
         if st.session_state.admin_log:
             st.markdown(f'<div class="config-log">{"<br>".join(st.session_state.admin_log[:3])}</div>', unsafe_allow_html=True)
@@ -145,15 +139,18 @@ st.write(f"### 💼 {user_name}님 실적")
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
+# [수정] NameError 방지를 위한 변수 선언 순서 조정
 existing_row = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
-if not existing_row.empty:
+is_edit = not existing_row.empty
+
+if is_edit:
     st.markdown(f'<div class="save-log">📝 {str_date} {existing_row.iloc[0]["입력시간"]} 저장됨</div>', unsafe_allow_html=True)
 
 if st.button("🌴 휴무 등록", use_container_width=True):
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.rerun()
 
-# 인센티브 섹션
+# 인센티브 합계 섹션
 st.divider()
 if "incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
@@ -163,7 +160,6 @@ if "incen_sum" not in st.session_state or st.session_state.get("last_date") != s
 st.write(f"**💰 인센 합계: {st.session_state.incen_sum:,}원**")
 add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
-# 가로 버튼 (긴급 복구 완료)
 with st.container(key="incen_buttons"):
     c1, c2, c3 = st.columns(3)
     if c1.button("➕추가"):
@@ -180,9 +176,9 @@ st.write("**📦 품목 수량**")
 counts = []
 for i in range(0, 6, 2):
     c1, c2 = st.columns(2)
-    with c1: counts.append(st.number_input(cfg["item_names"][i], 0, value=int(existing_row.iloc[0][f'item{i+1}']) if not existing_row.empty else 0, key=f"it_{i}"))
-    with c2: counts.append(st.number_input(cfg["item_names"][i+1], 0, value=int(existing_row.iloc[0][f'item{i+2}']) if not existing_row.empty else 0, key=f"it_{i+1}"))
-counts.append(st.number_input(cfg["item_names"][6], 0, value=int(existing_row.iloc[0]['item7']) if not existing_row.empty else 0, key="it_6"))
+    with c1: counts.append(st.number_input(cfg["item_names"][i], 0, value=int(existing_row.iloc[0][f'item{i+1}']) if is_edit else 0, key=f"it_{i}"))
+    with c2: counts.append(st.number_input(cfg["item_names"][i+1], 0, value=int(existing_row.iloc[0][f'item{i+2}']) if is_edit else 0, key=f"it_{i+1}"))
+counts.append(st.number_input(cfg["item_names"][6], 0, value=int(existing_row.iloc[0]['item7']) if is_edit else 0, key="it_6"))
 
 if st.button("✅ 데이터 최종 저장", type="primary", use_container_width=True):
     item_total = sum([int(c) * int(p) for c, p in zip(counts, cfg["item_prices"])])
