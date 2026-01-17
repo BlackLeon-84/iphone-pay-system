@@ -5,12 +5,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v2.4.6"
+SW_VERSION = "v2.4.4"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [정밀 레이아웃] 버튼 겹침 해결 CSS ---
+# --- [스마트 레이아웃] 아이폰 가로 3열 버튼 강제 고정 CSS ---
 st.markdown(f"""
     <style>
     /* 1. 전체 여백 최적화 */
@@ -22,31 +22,29 @@ st.markdown(f"""
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
 
-    /* 2. 기본 서식 */
+    /* 2. 불필요한 서식 제거 */
     hr {{ border: 0; height: 1px; background: #eee; margin: 15px 0; }}
     div[data-testid="stVerticalBlock"] > div {{ border: none !important; }}
     div[data-baseweb="base-input"] {{ border: none !important; background-color: #f1f3f5 !important; border-radius: 8px !important; }}
 
-    /* 3. ★ 핵심: 버튼 겹침 방지 (공간 강제 확보) ★ */
+    /* 3. ★ 핵심: 좁은 화면에서도 가로 3열 강제 유지 ★ */
     [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 6px !important; /* 버튼 사이 안전 거리 확보 */
+        flex-wrap: nowrap !important; /* 아래로 떨어지지 않게 설정 */
         align-items: center !important;
+        gap: 4px !important; /* 버튼 사이 간격 최소화 */
     }}
-    [data-testid="column"] {{
-        flex: 1 1 0% !important;
+    [data-testid="stHorizontalBlock"] > div {{
+        flex: 1 1 0% !important; /* 모든 컬럼이 동일한 폭을 가짐 */
         min-width: 0 !important;
     }}
-    /* 버튼이 서로 겹치지 않게 최소 너비를 보장하고 글자 크기 조정 */
     div[data-testid="stHorizontalBlock"] button {{
-        font-size: 12px !important;
-        padding: 0px 4px !important;
+        font-size: 11px !important; /* 아이폰용 글자 크기 최적화 */
+        padding: 0px !important;
         width: 100% !important;
-        min-height: 42px !important;
-        white-space: nowrap !important;
-        flex-shrink: 0 !important; /* 버튼이 찌그러지거나 겹치지 않게 보호 */
+        min-height: 40px !important;
+        white-space: nowrap !important; /* 글자 줄바꿈 방지 */
     }}
 
     /* 4. 텍스트 및 테이블 스타일 */
@@ -170,7 +168,7 @@ is_edit = not existing_row.empty
 
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
-    st.session_state.incen_history = [{"val": int(existing_row.iloc[0]["인센티브"]), "time": "기록"}] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
+    st.session_state.incen_history = [{"val": int(existing_row.iloc[0]["인센티브"]), "time": "기존"}] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
     st.session_state.last_date = str_date
 
 st.write(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
@@ -179,7 +177,7 @@ if st.session_state.incen_history:
 
 add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0)
 
-# 가로 3열 버튼 (겹침 방지 보강)
+# 가로 3열 강제 고정 버튼
 col1, col2, col3 = st.columns(3)
 if col1.button("➕추가", use_container_width=True):
     st.session_state.current_incen_sum += add_amt
