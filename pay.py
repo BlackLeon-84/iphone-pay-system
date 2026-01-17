@@ -7,7 +7,7 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.5.0"
+SW_VERSION = "v3.5.1"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -27,7 +27,6 @@ st.markdown(f"""
         padding-left: 5px; border-left: 4px solid #007bff;
     }}
     
-    /* 인센티브 버튼 레이아웃 */
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; width: 100% !important;
     }}
@@ -45,7 +44,6 @@ st.markdown(f"""
         height: 50px !important; font-size: 18px !important; font-weight: bold !important; background-color: #007bff !important; color: white !important;
     }}
 
-    /* 상태 카드 디자인 */
     .status-card {{
         padding: 12px; border-radius: 12px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 14px;
     }}
@@ -58,18 +56,16 @@ st.markdown(f"""
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     .update-log {{ font-size: 11px; color: #777; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 30px; border: 1px solid #eee; }}
     
-    /* 인센 히스토리 목록 */
     .inc-history-box {{
         background: #fdfdfd; border: 1px solid #f0f0f0; border-radius: 8px; padding: 8px; margin-top: 5px; font-size: 11px; color: #666;
     }}
     .inc-item {{ display: inline-block; background: #eee; padding: 2px 6px; border-radius: 4px; margin: 2px; }}
     
-    /* 리포트 상세 수식 */
     .calc-detail {{ font-size: 11px; color: #888; margin-top: 5px; background: #fcfcfc; padding: 8px; border-radius: 5px; border-left: 3px solid #ddd; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 로직 ---
+# --- 구글 시트 로직 (안정성 강화) ---
 SHEET_NAME = "아이폰정산"
 BASE_STAFF = ["태완", "남근", "성훈"]
 
@@ -92,7 +88,14 @@ def get_gsheet_client():
 
 @st.cache_resource
 def get_spreadsheet():
-    return get_gsheet_client().open(SHEET_NAME)
+    # 리트라이 로직 추가 (API 전송 오류 대비)
+    for _ in range(3):
+        try:
+            return get_gsheet_client().open(SHEET_NAME)
+        except:
+            time.sleep(1)
+    st.error("구글 시트 연결에 실패했습니다. 잠시 후 새로고침 해주세요.")
+    st.stop()
 
 def get_config_worksheet():
     ss = get_spreadsheet()
@@ -104,16 +107,26 @@ def get_config_worksheet():
         ws.append_row(headers)
         return ws
 
+# [최적화] 직원 리스트 캐싱 (10분)
+@st.cache_data(ttl=600)
 def get_dynamic_staff_list():
     try:
         sheet = get_config_worksheet()
         names = sheet.col_values(1)[1:]
         return sorted(list(set(BASE_STAFF + [n for n in names if n])))
-    except: return BASE_STAFF
+    except:
+        return BASE_STAFF
 
+# [최적화] 직원 설정 로드 캐싱 (5분)
+@st.cache_data(ttl=300)
 def load_staff_salary_config(name):
-    sheet = get_config_worksheet()
-    rows = sheet.get_all_values()
+    try:
+        sheet = get_config_worksheet()
+        rows = sheet.get_all_values()
+    except: return {"base_salary": 3500000, "start_day": 13, "insurance": 104760, 
+                    "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
+                    "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]}
+
     defaults = {"base_salary": 3500000, "start_day": 13, "insurance": 104760, 
                 "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
                 "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]}
@@ -130,6 +143,7 @@ def load_staff_salary_config(name):
                     "item_names": [d.get(f"item{i}_name", defaults["item_names"][i-1]) or defaults["item_names"][i-1] for i in range(1,8)],
                     "item_prices": [safe_int(d.get(f"item{i}_price"), defaults["item_prices"][i-1]) for i in range(1,8)]
                 }
+    # 시트에 없는 신규 직원의 경우 캐시하면 안 됨 (저장 후 다시 읽을 때 캐시 때문)
     save_staff_salary_config(name, defaults["base_salary"], defaults["start_day"], defaults["insurance"], defaults["item_names"], defaults["item_prices"])
     return defaults
 
@@ -144,12 +158,14 @@ def save_staff_salary_config(name, base, day, ins, names, prices):
         col = chr(ord('A') + len(data) - 1)
         sheet.update(range_name=f"A{idx}:{col}{idx}", values=[data])
     else: sheet.append_row(data)
+    # [최적화] 설정 변경 시 캐시 즉시 삭제
+    st.cache_data.clear()
 
 def get_user_worksheet(user_name):
     ss = get_spreadsheet()
     try:
         return ss.worksheet(user_name)
-    except gspread.exceptions.WorksheetNotFound:
+    except:
         ws = ss.add_worksheet(title=user_name, rows="1000", cols="20")
         ws.append_row(["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
         return ws
@@ -190,6 +206,7 @@ def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
 # --- 메인 코드 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
+# 캐싱된 직원 리스트 로드
 STAFF_LIST = get_dynamic_staff_list()
 
 if not st.session_state.logged_in:
@@ -201,9 +218,10 @@ if not st.session_state.logged_in:
         else:
             st.session_state.logged_in = True
             st.session_state.user_name = user_id
+            # 캐싱된 설정 로드
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 업데이트</b><br>• 저장 상태 카드(Badge) 디자인 개선<br>• 인센티브 건별 히스토리 기록 추적<br>• 예상 수령액 상세 계산 내역 표시<br>• 리포트 가독성 강화 (날짜 크기, 제목 2글자)</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 최적화 완료</b><br>• 구글 API 호출 최소화 (캐싱 시스템 적용)<br>• 서버 에러(APIError) 자동 리트라이<br>• v3.5.0의 모든 기능 유지</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
@@ -242,7 +260,6 @@ st.write(f"### 💼 {user_name}님 실적")
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
-# [업데이트] 상태 로그 디자인 개선
 existing = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
 if not existing.empty:
     save_time = existing.iloc[0].get("입력시간", "기록없음")
@@ -277,7 +294,6 @@ if "inc_sum" not in st.session_state or st.session_state.get("last_date") != str
 
 st.write(f"현재 합계: **{st.session_state.inc_sum:,}원**")
 
-# [업데이트] 히스토리 내역 표시
 if st.session_state.inc_his:
     h_html = '<div class="inc-history-box">'
     for i, item in enumerate(st.session_state.inc_his):
@@ -330,8 +346,6 @@ if not df_all.empty:
     p_df = df_all[(df_all['date_dt'] >= s_dt) & (df_all['date_dt'] <= e_dt)].sort_values("날짜")
     if not p_df.empty:
         t_ex = safe_int(p_df["합계"].sum())
-        
-        # [업데이트] 예상 수령액 상세 내역 표시
         final_pay = int(b + t_ex - ins)
         st.write(f"**🏦 예상 수령: {final_pay:,}원**")
         st.markdown(f"""
@@ -341,7 +355,6 @@ if not df_all.empty:
         </div>
         """, unsafe_allow_html=True)
 
-        # [업데이트] 제목 2글자화
         hds = ["날짜", "인센"] + [n[:2] for n in it_n] + ["합계"]
         r_html, i_sums = "", [0]*7
         for _, r in p_df.iterrows():
@@ -350,7 +363,6 @@ if not df_all.empty:
             else:
                 it_tds = "".join([f"<td>{safe_int(r[f'item{i}'])}</td>" for i in range(1, 8)])
                 for i in range(1, 8): i_sums[i-1] += safe_int(r[f'item{i}'])
-                # [업데이트] 날짜 글씨 키움
                 r_html += f"<tr><td style='font-size:12px; font-weight:bold;'>{d}</td><td>{safe_int(r['인센티브']):,}</td>{it_tds}<td style='color:blue;'>{safe_int(r['합계']):,}</td></tr>"
         
         total_inc_val = safe_int(p_df['인센티브'].sum()) if not p_df.empty else 0
