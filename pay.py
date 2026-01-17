@@ -7,7 +7,7 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.8.0"
+SW_VERSION = "v3.8.1"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -27,10 +27,25 @@ st.markdown(f"""
         padding-left: 5px; border-left: 4px solid #007bff;
     }}
     
-    /* [v3.8.0] 아이폰 버튼 밀림 해결 - Gap 최소화 및 가로폭 확보 */
-    [data-testid="stHorizontalBlock"] {{ gap: 5px !important; }}
+    /* [v3.8.1] 아이폰 3단 버튼 완벽 가로 정렬 강제 */
+    .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 3px !important;
+        width: 100% !important;
+    }}
+    .st-key-incen_buttons [data-testid="stHorizontalBlock"] > div {{
+        flex: 1 1 0% !important;
+        min-width: 0 !important;
+    }}
     .st-key-incen_buttons button {{
-        font-size: 11px !important; padding: 0px !important; width: 100% !important; min-height: 42px !important; font-weight: bold !important;
+        font-size: 11px !important;
+        padding: 0px !important;
+        width: 100% !important;
+        min-height: 42px !important;
+        font-weight: bold !important;
+        letter-spacing: -0.5px;
     }}
 
     .admin-log {{ font-size: 11px; color: #155724; background-color: #d4edda; padding: 10px; border-radius: 5px; margin-top: 10px; border: 1px solid #c3e6cb; }}
@@ -42,9 +57,8 @@ st.markdown(f"""
 
     .weekly-box {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px; }}
     
-    /* [v3.8.0] 아이폰 리포트 표 최저 너비 조정 8.5px */
-    .report-table {{ width: 100%; font-size: 8.5px; text-align: center; border-collapse: collapse; table-layout: fixed; }}
-    .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 0px; word-break: break-all; letter-spacing: -0.8px; overflow: hidden; }}
+    .report-table {{ width: 100%; font-size: 8.8px; text-align: center; border-collapse: collapse; table-layout: fixed; }}
+    .report-table th, .report-table td {{ border: 1px solid #eee; padding: 4px 0px; word-break: break-all; letter-spacing: -0.8px; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     
     .inc-history-box {{ background: #fdfdfd; border: 1px solid #f0f0f0; border-radius: 8px; padding: 8px; margin-top: 5px; font-size: 11px; color: #666; }}
@@ -58,6 +72,9 @@ st.markdown(f"""
     .info-box {{ background: #fafafa; border: 1px solid #eee; padding: 10px; border-radius: 8px; font-size: 12px; line-height: 1.6; }}
     .info-label {{ color: #777; font-weight: bold; width: 70px; display: inline-block; }}
     .info-val {{ color: #333; font-weight: bold; }}
+
+    /* 저장 완료 메시지 스타일 */
+    .save-success {{ color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb; padding: 10px; border-radius: 8px; font-weight: bold; margin-top: 10px; text-align: center; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -188,7 +205,7 @@ if not st.session_state.logged_in:
     if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.session_state.salary_cfg = load_staff_salary_config(user_id); st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} UI 최적화 완료</b><br>• 아이폰 버튼 밀림 현상 완벽 해결<br>• 수당 입력 가독성 중심 재배치<br>• 리포트 요약 합산 및 정산표 정밀 튜닝</div>', unsafe_allow_html=True); st.stop()
+    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} UI 조작성 복구</b><br>• 아이폰 가로 3열 버튼 완벽 복구<br>• 시간수당 실시간 즉시 업데이트 적용<br>• 리포트 요약 명칭 원복 (기본급, 인센티브, 보험료)</div>', unsafe_allow_html=True); st.stop()
 
 user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
 is_ov_staff = user_name in ["태완", "남근"]
@@ -251,16 +268,17 @@ if "inc_sum" not in st.session_state or st.session_state.get("last_date") != str
 ov_pay, sel_etime = 0, "20:00"
 if is_ov_staff:
     etime_list = [f"{h}:{m:02d}" for h in range(20, 24) for m in range(0, 60, 10)] + ["24:00"]
+    # 수당 즉시 업데이트를 위해 selectbox를 먼저 처리
     e_val = existing.iloc[0]["퇴근시간"] if not existing.empty else "20:00"
     e_idx = etime_list.index(e_val) if e_val in etime_list else 0
     
-    # [v3.8.0] 수당 금액을 시간 선택창 바로 위로 배치 및 가시성 강화
-    h_sel, m_sel = map(int, e_val.split(":")) if e_val != "24:00" and e_val != "휴무" else (24, 0)
-    # 아래 metric은 실시간 반영을 위해 sel_etime 정의 후에 계산되지만, UI상 위해 미리 배치
-    st.markdown(f"<div style='background:#f0f8ff; padding:10px; border-radius:10px; border:1px solid #d0e8ff; margin-bottom:10px; text-align:center;'>현재 시간수당: <b style='color:#007bff; font-size:16px;'>{ (max(0, (h_sel*60+m_sel)-1200)//10) * sal_cfg['overtime_rate']:,}원</b></div>", unsafe_allow_html=True)
     sel_etime = st.selectbox("퇴근 시간 선택", options=etime_list, index=e_idx)
+    # 실시간 계산
     h, m = map(int, sel_etime.split(":")) if sel_etime != "24:00" else (24, 0)
     ov_min = max(0, (h * 60 + m) - 1200); ov_pay = (ov_min // 10) * sal_cfg["overtime_rate"]
+    
+    # [v3.8.1] 수당 금액이 즉시 반영되어 박스에 출력됨
+    st.markdown(f"<div style='background:#f0f8ff; padding:10px; border-radius:10px; border:1px solid #d0e8ff; margin-bottom:10px; text-align:center;'>현재 시간수당: <b style='color:#007bff; font-size:18px;'>{ov_pay:,}원</b></div>", unsafe_allow_html=True)
     st.metric("인센티브 합계", f"{st.session_state.inc_sum:,}원")
 else: st.metric("인센티브 합계", f"{st.session_state.inc_sum:,}원")
 
@@ -271,7 +289,7 @@ if st.session_state.inc_his:
 
 add_amt = st.number_input("인센 추가 금액", 0, step=1000, value=0, label_visibility="collapsed")
 
-# [v3.8.0] 아이폰 버튼 밀림 해결 (꽉 차는 3단 컬럼)
+# [v3.8.1] 아이폰 버튼 밀림 해결 - flex-wrap 강제 방지
 with st.container(key="incen_buttons"):
     b1, b2, b3 = st.columns(3)
     b1.button("➕추가", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": st.session_state.inc_sum + add_amt}), st.session_state.inc_his.append({"val": add_amt})))
@@ -289,7 +307,15 @@ cts.append(st.number_input(it_n[6], 0, value=safe_int(existing.iloc[0]['item7'])
 if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
     tot_val = st.session_state.inc_sum + ov_pay + sum([safe_int(c) * safe_int(p) for c, p in zip(cts, it_p)])
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "시간수당": ov_pay, "퇴근시간": sel_etime, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": tot_val, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
-    if save_to_gsheet(user_name, row): st.success("저장 완료!"); st.rerun()
+    if save_to_gsheet(user_name, row):
+        st.session_state.save_success = True
+        st.rerun()
+
+# [v3.8.1] 저장 성공 메시지 노출
+if st.session_state.get("save_success"):
+    st.markdown('<div class="save-success">✅ 데이터가 성공적으로 저장되었습니다!</div>', unsafe_allow_html=True)
+    # 3초 후 메시지 제거를 원할 경우 복잡해지므로 영구 또는 다음 클릭시 제거되도록 처리
+    st.session_state.save_success = False
 
 # --- 정산 리포트 ---
 st.divider()
@@ -307,22 +333,21 @@ if not df_all.empty:
         t_items = safe_int(p_df["합계"].sum()) - t_inc - t_ov
         final_pay = int(b + t_inc + t_ov + t_items - ins)
         
-        # [v3.8.0] 리포트 요약 합산 표시 (기본급, 인센티브, 보험료 3행만 노출)
+        # [v3.8.1] 리포트 요약 명칭 원복
         combined_inc = t_inc + t_items + t_ov
         st.markdown(f"""
         <div class="calc-detail">
-            <div class="calc-line"><span>공통 기본급</span> <span>+ {b:,}원</span></div>
-            <div class="calc-line"><span>정산 인센티브</span> <span>+ {combined_inc:,}원</span></div>
-            <div class="calc-line"><span>공제 보험료</span> <span>- {ins:,}원</span></div>
+            <div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div>
+            <div class="calc-line"><span>인센티브</span> <span>+ {combined_inc:,}원</span></div>
+            <div class="calc-line"><span>보험료</span> <span>- {ins:,}원</span></div>
             <div class="calc-total">
                 <div class="calc-line"><span>💰 총급여</span> <span>{final_pay:,}원</span></div>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # [v3.8.0] 정산표 헤더 최적화 및 금액 표시 로직
         h_base = ["날짜", "인센"]
-        if is_ov_staff: h_base.append("시간")
+        if is_ov_staff: h_base.append("수당") # '시간' 보다는 '수당'이 더 명확
         hds = h_base + [n[:2] for n in it_n] + ["합계"]
         r_html, i_sums = "", [0]*7
         for _, r in p_df.iterrows():
