@@ -5,20 +5,20 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v2.4.3"
+SW_VERSION = "v2.4.4"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [스마트 레이아웃] 틀어짐 없는 2열 및 모바일 버튼 최적화 CSS ---
+# --- [스마트 레이아웃] 아이폰 가로 3열 버튼 강제 고정 CSS ---
 st.markdown(f"""
     <style>
     /* 1. 전체 여백 최적화 */
     .block-container {{
         padding-top: 3.5rem !important;
         max-width: 450px !important;
-        padding-left: 12px !important;
-        padding-right: 12px !important;
+        padding-left: 10px !important;
+        padding-right: 10px !important;
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
 
@@ -27,14 +27,24 @@ st.markdown(f"""
     div[data-testid="stVerticalBlock"] > div {{ border: none !important; }}
     div[data-baseweb="base-input"] {{ border: none !important; background-color: #f1f3f5 !important; border-radius: 8px !important; }}
 
-    /* 3. 스마트 버튼 최적화 (아이폰 화면 밖으로 나가는 문제 해결) */
+    /* 3. ★ 핵심: 좁은 화면에서도 가로 3열 강제 유지 ★ */
     [data-testid="stHorizontalBlock"] {{
-        gap: 5px !important;
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important; /* 아래로 떨어지지 않게 설정 */
+        align-items: center !important;
+        gap: 4px !important; /* 버튼 사이 간격 최소화 */
+    }}
+    [data-testid="stHorizontalBlock"] > div {{
+        flex: 1 1 0% !important; /* 모든 컬럼이 동일한 폭을 가짐 */
+        min-width: 0 !important;
     }}
     div[data-testid="stHorizontalBlock"] button {{
-        font-size: 13px !important; /* 글자 크기 축소 */
-        padding: 0px !important;    /* 내부 여백 제거 */
+        font-size: 11px !important; /* 아이폰용 글자 크기 최적화 */
+        padding: 0px !important;
+        width: 100% !important;
         min-height: 40px !important;
+        white-space: nowrap !important; /* 글자 줄바꿈 방지 */
     }}
 
     /* 4. 텍스트 및 테이블 스타일 */
@@ -167,7 +177,7 @@ if st.session_state.incen_history:
 
 add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0)
 
-# 인센티브 버튼 (아이폰 최적화 적용된 3열)
+# 가로 3열 강제 고정 버튼
 col1, col2, col3 = st.columns(3)
 if col1.button("➕추가", use_container_width=True):
     st.session_state.current_incen_sum += add_amt
