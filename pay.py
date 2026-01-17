@@ -7,8 +7,8 @@ import calendar
 import time
 import hashlib
 
-# 소프트웨어 버전
-SW_VERSION = "v4.0.1"
+# --- 상수 및 설정 ---
+SW_VERSION = "v4.2.0"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -259,7 +259,17 @@ if not st.session_state.logged_in:
             else:
                 st.error("비밀번호가 일치하지 않습니다.")
 
-    st.markdown(f'<div class="admin-log"><b>🕒 {get_now_kst().strftime("%H:%M:%S")} v4.1.0 패치</b><br>• [보안] 전직원 비밀번호 기능 도입<br>• [기능] 비밀번호 변경 및 관리자 초기화 기능 추가</div>', unsafe_allow_html=True); st.stop()
+    st.markdown(f'''
+    <div class="admin-log">
+        <b>🕒 {get_now_kst().strftime("%Y-%m-%d")} 업데이트 ({SW_VERSION})</b><br>
+        <div style="margin-top:5px; line-height:1.4;">
+        • <b>[리포트]</b> 월별 리포트 조회 (과거 데이터 확인)<br>
+        • <b>[리포트]</b> 현금 수령액(가불) 정산 기능 추가<br>
+        • <b>[데이터]</b> 인센티브 상세 내역(1+1) 영구 저장<br>
+        • <b>[개선]</b> 날짜 표기 가독성 개선
+        </div>
+    </div>
+    ''', unsafe_allow_html=True); st.stop()
 
 # 최신 설정 로드
 user_name = st.session_state.user_name
@@ -268,7 +278,7 @@ is_ov_staff = user_name in ["태완", "남근"]
 df_all = load_data_from_gsheet(user_name)
 
 # --- 메인 화면 변수 및 날짜 처리 ---
-st.markdown(f'<div class="version-tag">{SW_VERSION}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="version-tag">{SW_VERSION} (Latest)</div>', unsafe_allow_html=True)
 st.write(f"### 💼 {user_name}님 실적")
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed"); str_date = sel_date.strftime("%Y-%m-%d")
 
@@ -528,8 +538,9 @@ if not df_all.empty:
             
         final_pay = int(b + total_sum_val - ins - t_cash); combined_inc = t_inc + t_items + t_ov
         
+        
         # 리포트 요약 카드
-        st.markdown(f'''
+        st.markdown(f"""
         <div class="calc-detail">
             <div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div>
             <div class="calc-line"><span>인센티브 (시간수당 포함)</span> <span>+ {combined_inc:,}원</span></div>
@@ -539,7 +550,7 @@ if not df_all.empty:
                 <div class="calc-line"><span>💰 실 수령액</span> <span>{final_pay:,}원</span></div>
             </div>
         </div>
-        ''', unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         h_base = ["날짜", "인센"] + (["수당"] if is_ov_staff else []); hds = h_base + [n[:2] for n in it_n] + ["합계"]
         r_html, i_sums = "", [0]*7
         for _, r in p_df.iterrows():
