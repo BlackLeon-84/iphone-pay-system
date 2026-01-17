@@ -3,9 +3,10 @@ import pandas as pd
 from datetime import datetime, date, timedelta, timezone
 import gspread
 from google.oauth2.service_account import Credentials
+import calendar
 
 # 소프트웨어 버전
-SW_VERSION = "v3.3.7"
+SW_VERSION = "v3.3.8"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -150,6 +151,11 @@ def save_to_gsheet(user_name, df_row):
         return True
     except: return False
 
+def get_safe_date(year, month, day):
+    """해당 월의 마지막 날을 넘지 않는 안전한 날짜 생성"""
+    last_day = calendar.monthrange(year, month)[1]
+    return date(year, month, min(day, last_day))
+
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
 # --- 세션 설정 ---
@@ -170,7 +176,7 @@ if not st.session_state.logged_in:
             st.session_state.user_name = user_id
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 정산 날짜 범위 계산 로직 정밀 보정<br>• 관리자 설정 및 아이폰 최적화 레이아웃 유지<br>• 급여 핵심 데이터 시트 동기화 완료</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 정산 날짜 ValueError 오류 완벽 해결<br>• 월별 말일 자동 감지 로직 추가<br>• 기존 아이폰 최적화 레이아웃 보존</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name = st.session_state.user_name
@@ -275,22 +281,20 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
            "합계": st.session_state.inc_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success("저장 완료!"); st.rerun()
 
-# --- 정산 리포트 날짜 보정 로직 ---
+# --- 정산 리포트 ---
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day, base, ins = sal_cfg['start_day'], sal_cfg['base_salary'], sal_cfg['insurance']
 
-# 선택된 날짜 기준으로 정산 시작일과 종료일 계산
+# 안전한 날짜 계산 로직 적용
 if sel_date.day >= s_day:
-    # 이번 달 시작일 ~ 다음 달 종료일 전날
-    start_dt = date(sel_date.year, sel_date.month, s_day)
+    start_dt = get_safe_date(sel_date.year, sel_date.month, s_day)
 else:
-    # 저번 달 시작일 ~ 이번 달 종료일 전날
-    prev_month = sel_date.replace(day=1) - timedelta(days=1)
-    start_dt = date(prev_month.year, prev_month.month, s_day)
+    prev_month_date = sel_date.replace(day=1) - timedelta(days=1)
+    start_dt = get_safe_date(prev_month_date.year, prev_month_date.month, s_day)
 
-# 종료일은 시작일로부터 약 한달 뒤 (다음 정산일 하루 전)
-end_dt = (start_dt + timedelta(days=32)).replace(day=s_day) - timedelta(days=1)
+end_dt = (start_dt + timedelta(days=32)).replace(day=1) # 다음달 1일로 일단 이동
+end_dt = get_safe_date(end_dt.year, end_dt.month, s_day) - timedelta(days=1)
 
 if not df_all.empty:
     p_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
