@@ -7,7 +7,7 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v4.1.0"
+SW_VERSION = "v4.0.1"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -19,149 +19,220 @@ st.markdown(f"""
     
     html, body, [data-testid="stAppViewContainer"] {{
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
-        background-color: #ffffff !important;
+        background-color: #F2F2F7 !important;
     }}
 
     .block-container {{
-        padding-top: 5rem !important;
-        max-width: 600px !important;
-        background-color: #ffffff !important;
+        padding-top: 2.5rem !important;
+        max-width: 500px !important;
+        padding-left: 20px !important;
+        padding-right: 20px !important;
+        background-color: #F2F2F7 !important;
     }}
 
-    /* Apple Premium Card Style (28px Radius & Subtle Border) */
+    /* 프리미엄 카드 스타일 (더 깊은 그림자와 부드러운 경계) */
     .apple-card {{
-        background: #f5f5f7;
-        border-radius: 28px;
-        padding: 32px;
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-radius: 24px;
+        padding: 28px;
         margin-bottom: 24px;
-        border: none;
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-    }}
-    .apple-card:hover {{
-        transform: scale(1.01);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        box-shadow: 0 10px 25px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.02);
     }}
 
     .version-tag {{ 
-        font-size: 13px; 
-        color: #86868b; 
-        text-align: center; 
-        margin-bottom: 40px;
+        font-size: 11px; 
+        color: #AEAEB2; 
+        text-align: right; 
+        margin-bottom: 20px;
         font-weight: 500;
-        letter-spacing: -0.01em;
+        letter-spacing: 0.5px;
     }}
 
     .section-header {{
-        font-size: 28px; 
-        font-weight: 600; 
-        color: #1d1d1f; 
-        margin: 60px 0 20px 0;
-        letter-spacing: -0.012em;
-        text-align: center;
+        font-size: 19px; 
+        font-weight: 700; 
+        color: #1C1C1E; 
+        margin: 35px 0 18px 0;
+        letter-spacing: -0.6px;
     }}
 
-    /* Apple Blue Pill Button (radius 980px) */
-    .stButton button {{
-        border-radius: 980px !important;
-        padding: 12px 24px !important;
+    /* 버튼 시스템 고도화 (그라데이션 및 인터랙션) */
+    .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
+        gap: 10px !important;
+    }}
+    .st-key-incen_buttons button {{
+        border-radius: 16px !important;
+        border: 1px solid #E5E5EA !important;
+        background: linear-gradient(180deg, #FFFFFF 0%, #F2F2F7 100%) !important;
+        color: #1C1C1E !important;
+        font-size: 14px !important;
         font-weight: 600 !important;
-        transition: all 0.2s ease !important;
+        min-height: 56px !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03) !important;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }}
+    .st-key-incen_buttons button:hover {{
+        background: #F2F2F7 !important;
+        border-color: #D1D1D6 !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.05) !important;
     }}
 
-    .st-key-login_btn button, .st-key-save_btn button {{
-        background-color: #0071e3 !important;
+    /* 메인 로그인 버튼 (Apple 블루 그라데이션 고도화) */
+    .st-key-login_btn button {{
+        height: 64px !important;
+        border-radius: 20px !important;
+        font-size: 20px !important;
+        font-weight: 600 !important;
+        background: linear-gradient(180deg, #0A84FF 0%, #0071E3 100%) !important;
         color: white !important;
         border: none !important;
-        height: 52px !important;
-        font-size: 17px !important;
-    }}
-    .st-key-login_btn button:hover, .st-key-save_btn button:hover {{
-        background-color: #0077ed !important;
-        opacity: 0.9;
+        box-shadow: 0 8px 20px rgba(0, 113, 227, 0.3) !important;
+        transition: opacity 0.2s ease !important;
     }}
 
-    /* Status Badges */
+    /* 상태 표시 배지 (더 부드러운 색감) */
     .status-card {{ 
-        padding: 20px; 
+        padding: 18px; 
         border-radius: 20px; 
-        margin-bottom: 32px; 
+        margin-bottom: 28px; 
         text-align: center; 
         font-weight: 600; 
-        font-size: 16px; 
+        font-size: 15px; 
+        letter-spacing: -0.3px;
     }}
-    .status-saved {{ background: #f5f5f7; color: #0071e3; }}
-    .status-missing {{ background: #f5f5f7; color: #ff3b30; }}
+    .status-saved {{ background: #E5F1FF; color: #0071E3; border: 1px solid rgba(0, 113, 227, 0.1); }}
+    .status-missing {{ background: #FFF2E5; color: #FF9500; border: 1px solid rgba(255, 149, 0, 0.1); }}
 
-    /* Weekly Box (Minimalist) */
+    /* 주간 집계 박스 (미니멀 화이트) */
     .weekly-box {{ 
         display: flex; 
-        justify-content: space-between; 
-        background: #f5f5f7; 
-        padding: 24px; 
-        border-radius: 24px; 
-        margin-bottom: 40px;
+        justify-content: space-around; 
+        background: white; 
+        padding: 20px; 
+        border-radius: 20px; 
+        margin-bottom: 30px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
     }}
-    .weekly-item {{ text-align: center; flex: 1; }}
 
-    /* Report Table (Apple Style) */
+    /* 리포트 테이블 (현대적 로우 방식) */
     .report-table {{ 
         width: 100%; 
-        font-size: 14px; 
+        font-size: 12px; 
         text-align: center; 
         border-collapse: collapse;
-        background: #ffffff;
-        border-radius: 0;
-        margin-top: 20px;
+        table-layout: fixed; 
+        background: white;
+        border-radius: 18px;
+        overflow: hidden;
+        border: none;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.03);
     }}
     .report-table th {{ 
-        color: #86868b; 
+        background-color: #F9F9FB; 
+        color: #8E8E93; 
         font-weight: 600; 
-        padding: 16px 8px; 
-        border-bottom: 1px solid #d2d2d7;
-        font-size: 12px;
+        padding: 14px 4px; 
+        border-bottom: 1px solid #F2F2F7;
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.5px;
     }}
     .report-table td {{ 
-        padding: 16px 8px; 
-        border-bottom: 1px solid #d2d2d7; 
-        color: #1d1d1f; 
+        padding: 14px 4px; 
+        border-bottom: 1px solid #F9F9FB; 
+        color: #1C1C1E; 
     }}
+    .report-table tr:last-child td {{ border-bottom: none; }}
     .total-row {{ 
+        background-color: #F9F9FB !important; 
         font-weight: 700; 
-        background-color: #f5f5f7;
+        color: #0071E3 !important; 
     }}
 
-    /* Master Dashboard (Admin) */
-    .master-item {{
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 16px;
-        background: white;
-        border-radius: 16px;
-        margin-bottom: 8px;
-        border: 1px solid #d2d2d7;
+    /* 인센티브 내역 (입체감 있는 버블) */
+    .inc-history-box {{ 
+        background: transparent;
+        padding: 5px 0; 
+        margin-top: 12px; 
+        font-size: 13px; 
     }}
-    .master-name {{ font-weight: 600; color: #1d1d1f; }}
-    .master-status {{ font-size: 13px; }}
-
-    /* Animation */
-    @keyframes fadeIn {{
-        from {{ opacity: 0; transform: translateY(10px); }}
-        to {{ opacity: 1; transform: translateY(0); }}
-    }}
-    .apple-card, .section-header {{
-        animation: fadeIn 0.8s ease-out;
+    .inc-item {{ 
+        display: inline-block; 
+        background: white; 
+        padding: 8px 14px; 
+        border-radius: 12px; 
+        margin: 4px; 
+        font-weight: 600;
+        color: #48484A;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.04);
+        border: 1px solid #F2F2F7;
     }}
 
-    /* Input Customization */
+    /* 정산 정보 상세 박스 (Apple Card 느낌 강화) */
+    .calc-detail {{ 
+        font-size: 16px; 
+        color: #1C1C1E; 
+        margin: 20px 0; 
+        background: white; 
+        padding: 32px; 
+        border-radius: 28px; 
+        box-shadow: 0 12px 30px rgba(0,0,0,0.05);
+        line-height: 1.8; 
+    }}
+    .calc-line {{ display: flex; justify-content: space-between; margin-bottom: 12px; }}
+    .calc-label {{ color: #8E8E93; font-weight: 500; }}
+    .calc-val {{ font-weight: 600; color: #1C1C1E; }}
+    .calc-total {{ 
+        font-size: 26px; 
+        font-weight: 700; 
+        color: #1C1C1E; 
+        border-top: 1px solid #F2F2F7; 
+        padding-top: 22px; 
+        margin-top: 22px; 
+    }}
+
+    /* 사이드바 스타일 (iOS 느낌) */
+    [data-testid="stSidebar"] {{
+        background-color: #F2F2F7 !important;
+    }}
+    [data-testid="stSidebar"] .stSubheader {{ 
+        font-size: 17px; 
+        font-weight: 700; 
+        color: #1C1C1E; 
+        margin-top: 30px; 
+    }}
+    .info-box {{ 
+        background: white; 
+        padding: 22px; 
+        border-radius: 20px; 
+        font-size: 14px; 
+        line-height: 2; 
+        border: 1px solid rgba(0,0,0,0.02);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    }}
+    .info-label {{ color: #8E8E93; font-weight: 500; width: 90px; display: inline-block; }}
+    .info-val {{ color: #1C1C1E; font-weight: 600; }}
+
+    /* 입력 위젯 커스텀 (더 얇고 세련된 보더) */
     div[data-baseweb="input"] {{
-        border-radius: 12px !important;
-        background-color: #f5f5f7 !important;
-        border: 1px solid transparent !important;
+        border-radius: 16px !important;
+        border: 1px solid #E5E5EA !important;
+        background-color: white !important;
+        transition: all 0.2s ease !important;
     }}
     div[data-baseweb="input"]:focus-within {{
-        border-color: #0071e3 !important;
-        background-color: white !important;
+        border-color: #0071E3 !important;
+        box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.1) !important;
     }}
+    .amt-label {{ color: #0071E3; font-size: 13px; font-weight: 600; display: block; margin-top: -10px; margin-bottom: 16px; opacity: 0.8; }}
+    
+    /* 스크롤바 커스텀 */
+    ::-webkit-scrollbar {{ width: 6px; }}
+    ::-webkit-scrollbar-thumb {{ background: #D1D1D6; border-radius: 10px; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -262,7 +333,6 @@ def get_user_worksheet(user_name):
         ws = ss.add_worksheet(title=user_name, rows="1000", cols="20")
         ws.append_row(USER_HEADER); return ws
 
-@st.cache_data(ttl=300)
 def load_data_from_gsheet(user_name):
     try:
         sheet = get_user_worksheet(user_name); data = sheet.get_all_values()
@@ -357,24 +427,6 @@ with st.sidebar:
         for n, p in zip(sal_cfg["item_names"], sal_cfg["item_prices"]): info_html += f"<span class='info-label'>{n[:4]}:</span> <span class='info-val'>{p:,}원</span><br>"
         st.markdown(info_html + "</div>", unsafe_allow_html=True)
     if user_name == "태완":
-        st.subheader("🛠️ 마스터 대시보드")
-        m_cols = st.columns(2)
-        today_str = get_now_kst().date().strftime("%Y-%m-%d")
-        for i, s_name in enumerate(STAFF_LIST):
-            s_data = load_data_from_gsheet(s_name)
-            s_today = s_data[s_data["날짜"] == today_str] if not s_data.empty else pd.DataFrame()
-            is_done = not s_today.empty
-            status_tag = "✅ 입력완료" if is_done else "⚪ 미입력"
-            status_color = "#0071e3" if is_done else "#86868b"
-            with m_cols[i % 2]:
-                st.markdown(f"""
-                <div class="master-item">
-                    <span class="master-name">{s_name}</span>
-                    <span class="master-status" style="color: {status_color};">{status_tag}</span>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        st.divider()
         st.subheader("🛠️ 관리자 설정")
         target = st.selectbox("수정 대상 직원", STAFF_LIST); t_sal = load_staff_salary_config(target)
         st.subheader("📦 품목 명칭 및 단가")
@@ -488,12 +540,6 @@ if not df_all.empty:
     df_all['date_dt'] = pd.to_datetime(df_all['날짜']).dt.date
     p_df = df_all[(df_all['date_dt'] >= s_dt) & (df_all['date_dt'] <= e_dt)].sort_values("날짜")
     if not p_df.empty:
-        # 성과 시각화 차트 추가
-        st.markdown('<div class="section-header" style="font-size:20px; margin-top:40px;">📈 성과 추이</div>', unsafe_allow_html=True)
-        chart_df = p_df.copy()
-        chart_df['날짜_단축'] = pd.to_datetime(chart_df['날짜']).dt.strftime('%m/%d')
-        st.bar_chart(chart_df.set_index('날짜_단축')['합계'], color="#0071e3")
-        
         if sal_cfg.get("apply_global"):
             t_inc = safe_int(p_df["인센티브"].sum())
             t_ov = safe_int(p_df["시간수당"].sum())
