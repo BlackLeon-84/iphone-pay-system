@@ -4,14 +4,15 @@ from datetime import datetime, date, timedelta, timezone
 import gspread
 from google.oauth2.service_account import Credentials
 import calendar
+import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.4.6"
+SW_VERSION = "v3.4.7"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [디자인 보존] 원본 CSS 그대로 복구 ---
+# --- [디자인 보존] 원본 CSS ---
 st.markdown(f"""
     <style>
     .block-container {{
@@ -21,53 +22,25 @@ st.markdown(f"""
         padding-right: 10px !important;
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
-
     .section-header {{
-        font-size: 14px;
-        font-weight: bold;
-        color: #333;
-        margin: 20px 0 10px 0;
-        padding-left: 5px;
-        border-left: 4px solid #007bff;
+        font-size: 14px; font-weight: bold; color: #333; margin: 20px 0 10px 0;
+        padding-left: 5px; border-left: 4px solid #007bff;
     }}
-
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 4px !important;
-        width: 100% !important;
+        display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; width: 100% !important;
     }}
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] > div {{
-        flex: 1 1 0% !important;
-        min-width: 0 !important;
+        flex: 1 1 0% !important; min-width: 0 !important;
     }}
     .st-key-incen_buttons button {{
-        font-size: 10px !important;
-        padding: 0px 1px !important;
-        width: 100% !important;
-        min-height: 40px !important;
-        white-space: nowrap !important;
+        font-size: 10px !important; padding: 0px 1px !important; width: 100% !important; min-height: 40px !important; white-space: nowrap !important;
     }}
-
     .admin-log {{
-        font-size: 11px;
-        color: #155724;
-        background-color: #d4edda;
-        padding: 10px;
-        border-radius: 5px;
-        margin-top: 10px;
-        border: 1px solid #c3e6cb;
+        font-size: 11px; color: #155724; background-color: #d4edda; padding: 10px; border-radius: 5px; margin-top: 10px; border: 1px solid #c3e6cb;
     }}
-
     .st-key-login_btn button {{
-        height: 50px !important;
-        font-size: 18px !important;
-        font-weight: bold !important;
-        background-color: #007bff !important;
-        color: white !important;
+        height: 50px !important; font-size: 18px !important; font-weight: bold !important; background-color: #007bff !important; color: white !important;
     }}
-
     .weekly-box {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px; }}
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
     .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
@@ -77,7 +50,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 로직 ---
+# --- 구글 시트 로직 (API 최적화) ---
 SHEET_NAME = "아이폰정산"
 BASE_STAFF = ["태완", "남근", "성훈"]
 
@@ -90,7 +63,7 @@ def safe_int(val, default=0):
 @st.cache_resource
 def get_gsheet_client():
     if "gcp_service_account" not in st.secrets:
-        st.error("구글 서비스 계정 설정이 없습니다.")
+        st.error("Secrets 설정에 gcp_service_account 정보가 없습니다.")
         st.stop()
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds_info = dict(st.secrets["gcp_service_account"])
@@ -104,16 +77,19 @@ def get_spreadsheet():
 
 def get_config_worksheet():
     ss = get_spreadsheet()
-    headers = ["직원명", "기본급", "정산일", "보험료"] + [f"item{i}_name" for i in range(1,8)] + [f"item{i}_price" for i in range(1,8)]
-    ws_list = [sh.title for sh in ss.worksheets()]
-    if "config" in ws_list:
-        ws = ss.worksheet("config")
-        curr = ws.row_values(1)
-        if not curr or curr[0] != "직원명": ws.update(range_name="A1:R1", values=[headers])
-    else:
+    try:
+        # 시트 목록 전체 조회를 피하고 바로 접근 (API 호출 절약)
+        return ss.worksheet("config")
+    except gspread.exceptions.WorksheetNotFound:
+        headers = ["직원명", "기본급", "정산일", "보험료"] + [f"item{i}_name" for i in range(1,8)] + [f"item{i}_price" for i in range(1,8)]
         ws = ss.add_worksheet(title="config", rows="100", cols="20")
         ws.append_row(headers)
-    return ws
+        return ws
+    except Exception as e:
+        if "APIError" in str(e):
+            st.error("구글 서버 응답 지연입니다. 잠시 후 새로고침 해주세요.")
+            st.stop()
+        raise e
 
 def get_dynamic_staff_list():
     try:
@@ -134,14 +110,13 @@ def load_staff_salary_config(name):
         for r in rows[1:]:
             if r and r[0] == name:
                 d = {hd[i]: r[i] for i in range(min(len(hd), len(r)))}
-                res = {
+                return {
                     "base_salary": safe_int(d.get("기본급"), 3500000),
                     "start_day": safe_int(d.get("정산일"), 13),
                     "insurance": safe_int(d.get("보험료"), 104760),
                     "item_names": [d.get(f"item{i}_name", defaults["item_names"][i-1]) or defaults["item_names"][i-1] for i in range(1,8)],
                     "item_prices": [safe_int(d.get(f"item{i}_price"), defaults["item_prices"][i-1]) for i in range(1,8)]
                 }
-                return res
     save_staff_salary_config(name, defaults["base_salary"], defaults["start_day"], defaults["insurance"], defaults["item_names"], defaults["item_prices"])
     return defaults
 
@@ -159,9 +134,9 @@ def save_staff_salary_config(name, base, day, ins, names, prices):
 
 def get_user_worksheet(user_name):
     ss = get_spreadsheet()
-    ws_list = [sh.title for sh in ss.worksheets()]
-    if user_name in ws_list: return ss.worksheet(user_name)
-    else:
+    try:
+        return ss.worksheet(user_name)
+    except gspread.exceptions.WorksheetNotFound:
         ws = ss.add_worksheet(title=user_name, rows="1000", cols="20")
         ws.append_row(["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
         return ws
@@ -174,7 +149,8 @@ def load_data_from_gsheet(user_name):
         df = pd.DataFrame(data[1:], columns=data[0])
         cols = ["인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계"]
         for c in cols:
-            if c in df.columns: df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", ""), errors='coerce').fillna(0).astype(int)
+            if c in df.columns: 
+                df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", ""), errors='coerce').fillna(0).astype(int)
         return df
     except: return pd.DataFrame()
 
@@ -199,8 +175,11 @@ def get_safe_date(y, m, d):
 
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 실행 제어 ---
+# --- 메인 코드 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
+
+# 시트 목록은 최초 한 번 혹은 필요할 때만 불러오기 위해 세션 활용 가능하지만, 
+# 현재는 동적 리스트가 필요하므로 최적화된 함수 호출
 STAFF_LIST = get_dynamic_staff_list()
 
 if not st.session_state.logged_in:
@@ -214,7 +193,7 @@ if not st.session_state.logged_in:
             st.session_state.user_name = user_id
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 디자인 완벽 복구</b><br>• 아이폰 최적화 버튼 및 레이아웃 복구<br>• 구글 시트 데이터 정리 로직 강화<br>• 직원별 개별 설정 기능 유지</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 업데이트</b><br>• 구글 API 속도 제한 오류 완화<br>• 디자인 완벽 복구 및 유지<br>• 직원별 개별 설정 기능 강화</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
@@ -242,7 +221,7 @@ with st.sidebar:
             st.session_state.admin_log = f"✅ {target} 저장 완료 ({get_now_kst().strftime('%H:%M:%S')})"
             st.rerun()
         if "admin_log" in st.session_state: st.markdown(f'<div class="admin-log">{st.session_state.admin_log}</div>', unsafe_allow_html=True)
-    if st.button("로그아웃"):
+    if st.button("로그아웃", use_container_width=True):
         for k in list(st.session_state.keys()): del st.session_state[k]
         st.rerun()
 
@@ -305,6 +284,7 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": st.session_state.inc_sum + total_val, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success("저장 완료!"); st.rerun()
 
+# --- 정산 리포트 ---
 st.divider()
 st.subheader("📊 정산 리포트")
 s_d, b, ins = safe_int(sal_cfg['start_day'], 13), safe_int(sal_cfg['base_salary']), safe_int(sal_cfg['insurance'])
@@ -331,5 +311,5 @@ if not df_all.empty:
                 it_tds = "".join([f"<td>{safe_int(r[f'item{i}'])}</td>" for i in range(1, 8)])
                 for i in range(1, 8): i_sums[i-1] += safe_int(r[f'item{i}'])
                 r_html += f"<tr><td>{d}</td><td>{safe_int(r['인센티브']):,}</td>{it_tds}<td style='color:blue;'>{safe_int(r['합계']):,}</td></tr>"
-        r_html += f"<tr class='total-row'><td>합</td><td>{safe_int(p_df['인센티브'].sum()):,}</td>" + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{t_ex:,}</td></tr>"
+        r_html += f"<tr class='total-row'><td>합</td><td>{safe_int(p_df['인센티브'].sum():,) if not p_df.empty else 0}</td>" + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{t_ex:,}</td></tr>"
         st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{x}</th>" for x in hds])}</tr>{r_html}</table>', unsafe_allow_html=True)
