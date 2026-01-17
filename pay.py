@@ -5,15 +5,14 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.2.5"
+SW_VERSION = "v3.2.6"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [스마트 레이아웃] 아이폰 100% 최적화 CSS (v3.0.5 유지) ---
+# --- [v3.0.5 기반] 디자인 고도화 CSS ---
 st.markdown(f"""
     <style>
-    /* 1. 전체 여백 최적화 */
     .block-container {{
         padding-top: 3.5rem !important;
         max-width: 450px !important;
@@ -21,13 +20,26 @@ st.markdown(f"""
         padding-right: 10px !important;
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
-
-    /* 2. 입력창 스타일 */
     hr {{ border: 0; height: 1px; background: #eee; margin: 15px 0; }}
-    div[data-testid="stVerticalBlock"] > div {{ border: none !important; }}
-    div[data-baseweb="base-input"] {{ border: none !important; background-color: #f1f3f5 !important; border-radius: 8px !important; }}
+    
+    /* 섹션 분리 디자인 */
+    .section-card {{
+        background-color: #f8faff;
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid #e1e8f0;
+        margin-bottom: 20px;
+    }}
+    .section-title {{
+        font-size: 14px;
+        font-weight: bold;
+        color: #1e88e5;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+    }}
 
-    /* 3. ★ 아이폰용 버튼 탈출 방지 설정 ★ */
+    /* 아이폰 가로 버튼 (v3.0.5 유지) */
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
@@ -45,11 +57,19 @@ st.markdown(f"""
         width: 100% !important;
         min-height: 40px !important;
         white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: clip !important;
     }}
 
-    /* 4. 로그인 입장 버튼 강조 */
+    /* 설정 저장 로그 스타일 */
+    .config-log {{
+        font-size: 11px;
+        color: #28a745;
+        background-color: #f0fff4;
+        padding: 8px;
+        border-radius: 5px;
+        margin-top: 10px;
+        border: 1px solid #c6f6d5;
+    }}
+
     .st-key-login_btn button {{
         height: 50px !important;
         font-size: 18px !important;
@@ -58,23 +78,15 @@ st.markdown(f"""
         color: white !important;
     }}
 
-    /* 5. 텍스트 및 테이블 스타일 */
-    input {{ font-size: 16px !important; }}
-    label p {{ font-size: 12px !important; font-weight: bold !important; color: #444 !important; }}
-    .weekly-box {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px; }}
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
     .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
-    .calc-detail {{ font-size: 11px; color: #888; margin-top: -5px; margin-bottom: 10px; }}
-    .incen-log {{ font-size: 11px; color: #666; padding: 8px; background: #fcfcfc; border-radius: 5px; border-left: 3px solid #ddd; margin: 10px 0; }}
     .save-log {{ font-size: 12px; color: #1e88e5; font-weight: bold; margin-bottom: 5px; }}
-    
-    /* 버전 히스토리 스타일 */
     .update-log {{ font-size: 11px; color: #777; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 30px; border: 1px solid #eee; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 연결 (직원별 탭 관리 로직 추가) ---
+# --- 구글 시트 연결 ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
@@ -92,8 +104,7 @@ def get_user_worksheet(user_name):
     spreadsheet = client.open(SHEET_NAME)
     try:
         return spreadsheet.worksheet(user_name)
-    except gspread.exceptions.WorksheetNotFound:
-        # 탭이 없으면 새로 생성하고 헤더 추가
+    except:
         new_sheet = spreadsheet.add_worksheet(title=user_name, rows="1000", cols="20")
         new_sheet.append_row(["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
         return new_sheet
@@ -115,20 +126,17 @@ def save_to_gsheet(user_name, df_row):
         sheet = get_user_worksheet(user_name)
         all_data = sheet.get_all_values()
         row_idx = -1
-        # 날짜가 같은 행이 있는지 확인 (직원명은 이미 탭으로 분리됨)
         for i, row in enumerate(all_data):
             if len(row) > 1 and row[1] == df_row['날짜']:
                 row_idx = i + 1; break
-        if row_idx != -1: 
-            sheet.update(range_name=f"A{row_idx}", values=[list(df_row.values())])
-        else: 
-            sheet.append_row(list(df_row.values()))
+        if row_idx != -1: sheet.update(range_name=f"A{row_idx}", values=[list(df_row.values())])
+        else: sheet.append_row(list(df_row.values()))
         return True
     except: return False
 
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 세션 및 설정 ---
+# --- 세션 설정 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "config" not in st.session_state:
@@ -136,29 +144,18 @@ if "config" not in st.session_state:
                                "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
                                "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]}
 
-# --- 로그인 (v3.0.5 디자인 100% 유지) ---
+# --- 로그인 (디자인 유지) ---
 if not st.session_state.logged_in:
     st.title("🔐 로그인")
     user_id = st.selectbox("직원 선택", options=STAFF_LIST)
     admin_pw = st.text_input("비번", type="password") if user_id == "태완" else ""
-    
     if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
-    
-    # 하단 수정 내역 로그 추가 (v3.0.5 유지)
-    st.markdown(f"""
-        <div class="update-log">
-            <b>🚀 소프트웨어 버전: v3.0.5</b><br>
-            • 로그인 페이지 '입장' 버튼 크기 확대 및 디자인 강조<br>
-            • 날짜별 최종 저장 시간 로그 기능 복구<br>
-            • 아이폰 가로 정렬 버튼 레이아웃 최적화 (v3.0.0 기준)<br>
-            • 구글 시트 데이터 로딩 안정화
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 설정 저장 로그 기능 추가<br>• 인센티브/품목 섹션 분리 디자인 적용<br>• 아이폰 가로 정렬 버튼 최적화 유지</div>', unsafe_allow_html=True)
     st.stop()
 
-# --- 사이드바 ---
+# --- 사이드바 (설정 로그 추가) ---
 user_name = st.session_state.user_name
 cfg = st.session_state.config
 with st.sidebar:
@@ -177,55 +174,39 @@ with st.sidebar:
         ins = st.number_input("보험료", value=cfg["insurance"])
         if st.button("💿 설정 저장", use_container_width=True):
             st.session_state.config.update({"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices})
-            st.success("저장 완료"); st.rerun()
+            st.session_state.last_config_log = f"✅ {target_staff}님 설정이 {get_now_kst().strftime('%H:%M:%S')}에 저장되었습니다."
+            st.rerun()
+        if "last_config_log" in st.session_state:
+            st.markdown(f'<div class="config-log">{st.session_state.last_config_log}</div>', unsafe_allow_html=True)
     if st.button("로그아웃"): st.session_state.logged_in = False; st.rerun()
 
 # --- 메인 화면 ---
 st.markdown(f'<div class="version-tag">{SW_VERSION}</div>', unsafe_allow_html=True)
-# 로그인한 사용자의 탭에서 데이터 로드
 df_all = load_data_from_gsheet(user_name)
 st.write(f"### 💼 {user_name}님 실적")
 
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
-# --- 저장 시간 로그 창 ---
 existing_row = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
 if not existing_row.empty:
     save_time = existing_row.iloc[0].get('입력시간', '기록없음')
     st.markdown(f'<div class="save-log">📝 {save_time}에 저장된 기록이 있습니다.</div>', unsafe_allow_html=True)
-else:
-    st.markdown('<div style="font-size:12px; color:#999; margin-bottom:5px;">⚪ 아직 저장된 기록이 없습니다.</div>', unsafe_allow_html=True)
 
 if st.button("🌴 오늘 휴무 등록", use_container_width=True):
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.rerun()
 
-st.write("**📅 최근 7일**")
-weekly_html = '<div class="weekly-box">'
-today_kst = get_now_kst().date()
-for i in range(6, -1, -1):
-    target_d = today_kst - timedelta(days=i)
-    target_str = target_d.strftime("%Y-%m-%d")
-    # 현재 로그인한 사용자의 데이터에서 확인
-    day_data = df_all[df_all["날짜"] == target_str] if not df_all.empty else pd.DataFrame()
-    icon = "✅" if not day_data.empty and day_data.iloc[0]['비고'] != "휴무" else ("🌴" if not day_data.empty else "⚪")
-    weekly_html += f'<div style="text-align:center;"><div style="font-size:10px;">{target_d.day}일</div><div>{icon}</div></div>'
-st.markdown(weekly_html + '</div>', unsafe_allow_html=True)
-
-st.divider()
+# 1. 인센티브 섹션
+st.markdown('<div class="section-card"><div class="section-title">💰 인센티브 입력</div>', unsafe_allow_html=True)
 is_edit = not existing_row.empty
-
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.current_incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [{"val": int(existing_row.iloc[0]["인센티브"]), "time": "기존"}] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
     st.session_state.last_date = str_date
 
-st.write(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
-if st.session_state.incen_history:
-    st.markdown(f'<div class="incen-log">📋 상세: {" / ".join([f"{h['val']:,}" for h in st.session_state.incen_history])}</div>', unsafe_allow_html=True)
-
-add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0)
+st.write(f"**현재 합계: {st.session_state.current_incen_sum:,}원**")
+add_amt = st.number_input("금액 입력", min_value=0, step=1000, value=0, key="incen_in")
 
 with st.container(key="incen_buttons"):
     col1, col2, col3 = st.columns(3)
@@ -234,24 +215,20 @@ with st.container(key="incen_buttons"):
         st.session_state.incen_history.append({"val": add_amt, "time": get_now_kst().strftime("%H:%M")})
         st.rerun()
     if col2.button("↩️취소", use_container_width=True) and st.session_state.incen_history:
-        pop_item = st.session_state.incen_history.pop()
-        st.session_state.current_incen_sum -= pop_item['val']; st.rerun()
+        st.session_state.current_incen_sum -= st.session_state.incen_history.pop()['val']; st.rerun()
     if col3.button("🧹리셋", use_container_width=True):
         st.session_state.current_incen_sum = 0; st.session_state.incen_history = []; st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
 
-st.divider()
-st.write("**📦 품목 수량**")
+# 2. 품목 수량 섹션
+st.markdown('<div class="section-card"><div class="section-title">📦 품목 수량 입력</div>', unsafe_allow_html=True)
 counts = []
 for i in range(0, 6, 2):
     c1, c2 = st.columns(2)
-    with c1:
-        v1 = int(existing_row.iloc[0][f'item{i+1}']) if is_edit else 0
-        counts.append(st.number_input(cfg["item_names"][i], 0, value=v1, key=f"it_{i}"))
-    with c2:
-        v2 = int(existing_row.iloc[0][f'item{i+2}']) if is_edit else 0
-        counts.append(st.number_input(cfg["item_names"][i+1], 0, value=v2, key=f"it_{i+1}"))
-v7 = int(existing_row.iloc[0]['item7']) if is_edit else 0
-counts.append(st.number_input(cfg["item_names"][6], 0, value=v7, key="it_6"))
+    with c1: counts.append(st.number_input(cfg["item_names"][i], 0, value=int(existing_row.iloc[0][f'item{i+1}']) if is_edit else 0, key=f"it_{i}"))
+    with c2: counts.append(st.number_input(cfg["item_names"][i+1], 0, value=int(existing_row.iloc[0][f'item{i+2}']) if is_edit else 0, key=f"it_{i+1}"))
+counts.append(st.number_input(cfg["item_names"][6], 0, value=int(existing_row.iloc[0]['item7']) if is_edit else 0, key="it_6"))
+st.markdown('</div>', unsafe_allow_html=True)
 
 if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
     item_total = sum([int(c) * int(p) for c, p in zip(counts, cfg["item_prices"])])
@@ -261,6 +238,7 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
            "합계": st.session_state.current_incen_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success("성공적으로 저장되었습니다."); st.rerun()
 
+# 3. 정산 리포트 (원본 양식 유지)
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day = cfg['start_day']
@@ -268,14 +246,11 @@ start_dt = date(sel_date.year, sel_date.month, s_day) if sel_date.day >= s_day e
 end_dt = (start_dt + timedelta(days=32)).replace(day=s_day) - timedelta(days=1)
 
 if not df_all.empty:
-    # 이미 해당 사용자의 데이터만 로드된 상태
     p_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
     if not p_df.empty:
         total_extra = p_df["합계"].sum()
-        total_incen = p_df["인센티브"].sum()
         st.write(f"**🏦 예상 수령: {int(cfg['base_salary'] + total_extra - cfg['insurance']):,}원**")
         st.markdown(f'<div class="calc-detail">(기본 {cfg["base_salary"]:,} + 추가 {total_extra:,} - 보험 {cfg["insurance"]:,})</div>', unsafe_allow_html=True)
-        
         headers = ["날", "인센"] + [n[:1] for n in cfg["item_names"]] + ["합계"]
         rows_html = ""; item_sums = [0]*7
         for _, r in p_df.iterrows():
@@ -285,6 +260,5 @@ if not df_all.empty:
                 item_tds = "".join([f"<td>{int(r[f'item{i}'])}</td>" for i in range(1, 8)])
                 for i in range(1, 8): item_sums[i-1] += int(r[f'item{i}'])
                 rows_html += f"<tr><td>{d}</td><td>{int(r['인센티브']):,}</td>{item_tds}<td style='color:blue;'>{int(r['합계']):,}</td></tr>"
-        
-        rows_html += f"<tr class='total-row'><td>합</td><td>{total_incen:,}</td>" + "".join([f"<td>{s}</td>" for s in item_sums]) + f"<td>{total_extra:,}</td></tr>"
+        rows_html += f"<tr class='total-row'><td>합</td><td>{p_df['인센티브'].sum():,}</td>" + "".join([f"<td>{s}</td>" for s in item_sums]) + f"<td>{total_extra:,}</td></tr>"
         st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{h}</th>" for h in headers])}</tr>{rows_html}</table>', unsafe_allow_html=True)
