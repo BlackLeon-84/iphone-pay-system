@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 import calendar
 
 # 소프트웨어 버전
-SW_VERSION = "v3.3.9"
+SW_VERSION = "v3.4.0"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -105,7 +105,6 @@ def load_staff_salary_config(name):
     data = sheet.get_all_records()
     for row in data:
         if row["직원명"] == name:
-            # 정산일이 31일을 넘어가면 13일로 강제 보정 (데이터 오류 방지)
             s_day = int(row["정산일"]) if int(row["정산일"]) <= 31 else 13
             return {"base_salary": int(row["기본급"]), "start_day": s_day, "insurance": int(row["보험료"])}
     default = {"base_salary": 3500000, "start_day": 13, "insurance": 104760}
@@ -177,7 +176,7 @@ if not st.session_state.logged_in:
             st.session_state.user_name = user_id
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 정산 시작일 범위 고정 (1~31일)<br>• 정산 리포트 날짜 계산 로직 강화<br>• 아이폰 최적화 레이아웃 보존</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 신규 직원 시트 자동 생성 로직 추가<br>• 정산일 슬라이더 1~31 고정<br>• 아이폰 최적화 디자인 유지</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name = st.session_state.user_name
@@ -202,15 +201,19 @@ with st.sidebar:
             
         st.divider()
         base = st.number_input("기본급", value=t_sal["base_salary"])
-        # 정산 시작일 범위를 1~31로 엄격히 제한
-        s_day = st.slider("정산 시작일 (1~31)", 1, 31, value=min(max(1, t_sal["start_day"]), 31))
+        s_day = st.slider("정산 시작일", 1, 31, value=min(max(1, t_sal["start_day"]), 31))
         ins = st.number_input("보험료", value=t_sal["insurance"])
         
-        if st.button(f"💿 {target_staff} 설정 저장", use_container_width=True):
+        if st.button(f"💿 {target_staff} 설정 및 시트 저장", use_container_width=True):
+            # 1. 급여 설정 저장
             save_staff_salary_config(target_staff, base, s_day, ins)
+            # 2. 품목 설정 세션 저장
             st.session_state.config_all[target_staff].update({"item_names": new_names, "item_prices": new_prices})
+            # 3. 직원 전용 데이터 시트가 없으면 즉시 생성
+            get_user_worksheet(target_staff)
+            
             if target_staff == user_name: st.session_state.salary_cfg = {"base_salary": base, "start_day": s_day, "insurance": ins}
-            st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] {target_staff} 설정 저장됨"
+            st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] {target_staff} 시트 생성 및 저장 완료"
             st.rerun()
         if "admin_log" in st.session_state:
             st.markdown(f'<div class="admin-log">{st.session_state.admin_log}</div>', unsafe_allow_html=True)
@@ -289,7 +292,6 @@ st.divider()
 st.subheader("📊 정산 리포트")
 s_day, base, ins = sal_cfg['start_day'], sal_cfg['base_salary'], sal_cfg['insurance']
 
-# 한 달 정산 기간 계산
 if sel_date.day >= s_day:
     start_dt = get_safe_date(sel_date.year, sel_date.month, s_day)
 else:
