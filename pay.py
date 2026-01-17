@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v2.4.6"
+SW_VERSION = "v3.0.3"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -31,17 +31,17 @@ st.markdown(f"""
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
-        flex-wrap: nowrap !important; /* 절대 아래로 안 떨어짐 */
+        flex-wrap: nowrap !important;
         gap: 4px !important;
         width: 100% !important;
     }}
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] > div {{
         flex: 1 1 0% !important;
-        min-width: 0 !important; /* 박스가 밖으로 나가는 것 방지 */
+        min-width: 0 !important;
     }}
     .st-key-incen_buttons button {{
-        font-size: 10px !important; /* 폰트를 더 줄임 */
-        padding: 0px 1px !important; /* 좌우 여백 거의 제거 */
+        font-size: 10px !important;
+        padding: 0px 1px !important;
         width: 100% !important;
         min-height: 40px !important;
         white-space: nowrap !important;
@@ -58,6 +58,8 @@ st.markdown(f"""
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     .calc-detail {{ font-size: 11px; color: #888; margin-top: -5px; margin-bottom: 10px; }}
     .incen-log {{ font-size: 11px; color: #666; padding: 8px; background: #fcfcfc; border-radius: 5px; border-left: 3px solid #ddd; margin: 10px 0; }}
+    /* 저장 정보 로그 스타일 */
+    .save-log {{ font-size: 12px; color: #1e88e5; font-weight: bold; margin-bottom: 5px; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -114,7 +116,7 @@ if "config" not in st.session_state:
 if not st.session_state.logged_in:
     st.title("🔐 로그인")
     user_id = st.selectbox("직원 선택", options=STAFF_LIST)
-    admin_pw = st.text_input("비번", type="password") if user_id == "태완" else ""
+    admin_pw = st.input("비번", type="password") if user_id == "태완" else ""
     if st.button("입장"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
@@ -149,6 +151,15 @@ st.write(f"### 💼 {user_name}님 실적")
 
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
+
+# --- [복구] 저장 시간 로그 창 ---
+existing_row = df_all[(df_all["날짜"] == str_date) & (df_all["직원명"] == user_name)] if not df_all.empty else pd.DataFrame()
+if not existing_row.empty:
+    save_time = existing_row.iloc[0].get('입력시간', '기록없음')
+    st.markdown(f'<div class="save-log">📝 {save_time}에 저장된 기록이 있습니다.</div>', unsafe_allow_html=True)
+else:
+    st.markdown('<div style="font-size:12px; color:#999; margin-bottom:5px;">⚪ 아직 저장된 기록이 없습니다.</div>', unsafe_allow_html=True)
+
 if st.button("🌴 오늘 휴무 등록", use_container_width=True):
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(row): st.rerun()
@@ -165,7 +176,6 @@ for i in range(6, -1, -1):
 st.markdown(weekly_html + '</div>', unsafe_allow_html=True)
 
 st.divider()
-existing_row = df_all[(df_all["날짜"] == str_date) & (df_all["직원명"] == user_name)] if not df_all.empty else pd.DataFrame()
 is_edit = not existing_row.empty
 
 if "current_incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
@@ -179,7 +189,6 @@ if st.session_state.incen_history:
 
 add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0)
 
-# 인센티브 버튼 영역
 with st.container(key="incen_buttons"):
     col1, col2, col3 = st.columns(3)
     if col1.button("➕추가", use_container_width=True):
