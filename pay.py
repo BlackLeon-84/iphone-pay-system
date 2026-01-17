@@ -75,6 +75,11 @@ st.markdown(f"""
 
     .save-success {{ color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb; padding: 12px; border-radius: 8px; font-weight: bold; margin-top: 10px; text-align: center; font-size: 14px; }}
     .amt-label {{ color: #007bff; font-size: 11px; font-weight: bold; display: block; margin-top: -15px; margin-bottom: 10px; }}
+    
+    /* [New] Borderless Form for Login */
+    [data-testid="stForm"] {{ border: 0px; padding: 0px; background: transparent; }}
+    .history-card {{ background: #f9f9f9; border-left: 3px solid #ccc; padding: 10px; margin-bottom: 8px; border-radius: 0 5px 5px 0; }}
+    .ver-badge {{ font-size: 11px; font-weight: bold; color: #555; background: #eee; padding: 2px 6px; border-radius: 4px; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -249,60 +254,56 @@ STAFF_LIST = get_staff_list_fixed()
 if not st.session_state.logged_in:
     st.title("🔐 로그인")
 
-    # [Callback] 로그인 처리 함수
-    def try_login():
-        u_id = st.session_state.login_uid
-        u_pw = st.session_state.login_pw
-        cfg = load_staff_salary_config(u_id)
+    # [Fix] st.form 테두리 제거 CSS 적용됨 -> 엔터키 로그인 지원 + 깔끔한 디자인
+    with st.form("login_form"):
+        user_id = st.selectbox("직원 선택", options=STAFF_LIST)
+        user_pw = st.text_input("비밀번호", type="password")
+        submitted = st.form_submit_button("입장", use_container_width=True) 
+
+    if submitted:
+        cfg = load_staff_salary_config(user_id)
         saved_hash = cfg.get("password_hash", "")
         
         if not saved_hash:
-            default_pw = "102030" if u_id == "태완" else "0000"
-            if u_pw == default_pw:
-                update_password(u_id, hash_password(u_pw))
-                st.session_state.logged_in = True; st.session_state.user_name = u_id
-                st.session_state.login_error = None
-            else: st.session_state.login_error = "초기 비밀번호가 잘못되었습니다."
+            default_pw = "102030" if user_id == "태완" else "0000"
+            if user_pw == default_pw:
+                update_password(user_id, hash_password(user_pw))
+                st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
+            else: st.error("초기 비밀번호가 잘못되었습니다. (태완:102030, 직원:0000)")
         else:
-            if check_password(u_pw, saved_hash):
-                st.session_state.logged_in = True; st.session_state.user_name = u_id
-                st.session_state.login_error = None
-            else: st.session_state.login_error = "비밀번호가 일치하지 않습니다."
-
-    st.selectbox("직원 선택", options=STAFF_LIST, key="login_uid")
-    st.text_input("비밀번호", type="password", key="login_pw", on_change=try_login)
-    
-    if st.button("입장", use_container_width=True, on_click=try_login, key="login_btn"): pass
-
-    if st.session_state.get("login_error"):
-        st.error(st.session_state.login_error); st.session_state.login_error = None
-    
-    if st.session_state.logged_in: st.rerun()
+            if check_password(user_pw, saved_hash):
+                st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
+            else: st.error("비밀번호가 일치하지 않습니다.")
 
     # [New] 업데이트 히스토리 데이터 (DB 없이 코드로 관리)
     UPDATE_HISTORY = [
-        {"ver": "v4.5.1", "date": "2026-01-18", "content": "• <b>[디자인]</b> 로그인 화면 기존 디자인 복구 (Enter키 지원 유지)<br>• <b>[편의성]</b> 로그인 시 엔터(Enter) 키로 입장 가능"},
+        {"ver": "v4.5.2", "date": "2026-01-18", "content": "• <b>[디자인]</b> 업데이트 내역 뷰 개선 (카드형 스타일)<br>• <b>[로그인]</b> 엔터키 지원 + 테두리 없는 깔끔한 폼 적용"},
+        {"ver": "v4.5.1", "date": "2026-01-18", "content": "• <b>[편의성]</b> 로그인 시 엔터(Enter) 키로 입장 가능"},
         {"ver": "v4.5.0", "date": "2026-01-18", "content": "• <b>[동기화]</b> 날짜 선택 시 하단 리포트 즉시 자동 변경<br>• <b>[UI]</b> 월간 공제 창 '접힘' 기본값 적용<br>• <b>[UI]</b> 리포트 기간 표기 직관적 개선 ('월급' 텍스트 제거)"},
         {"ver": "v4.4.2", "date": "2026-01-18", "content": "• <b>[안정성]</b> 데이터 로딩/로그인 에러 방지 안전장치 추가<br>• <b>[기능]</b> 일일 탭 리포트 기간 선택 기능 추가"},
         {"ver": "v4.4.0", "date": "2026-01-18", "content": "• <b>[UI 혁신]</b> '일일 입력'과 '월간 정산' 탭 분리<br>• <b>[기능]</b> 카드 공제 상세 입력(내역별 추가) 기능"},
         {"ver": "v4.2.0", "date": "2026-01-17", "content": "• <b>[기능]</b> 관리자 설정 페이지 강화<br>• <b>[수정]</b> 초기 비밀번호 오류 해결"},
     ]
 
+    st.markdown("---")
+    st.caption("✨ 최근 업데이트")
+    
+    # [Design Fix] 깔끔한 히스토리 디자인
     st.markdown(f'''
-    <div class="admin-log">
-        <b>🕒 {UPDATE_HISTORY[0]['date']} 업데이트 ({UPDATE_HISTORY[0]['ver']})</b><br>
-        <div style="margin-top:5px; line-height:1.4;">
-        {UPDATE_HISTORY[0]['content']}
-        </div>
+    <div class="history-card" style="border-left-color: #007bff; background: #f0f7ff;">
+        <span class="ver-badge" style="background: #e6f0ff; color: #0056b3;">NEW {UPDATE_HISTORY[0]['ver']}</span>
+        <span style="font-size:11px; color:#999; margin-left:5px;">{UPDATE_HISTORY[0]['date']}</span>
+        <div style="margin-top:5px; font-size:12px; color:#444; line-height:1.4;">{UPDATE_HISTORY[0]['content']}</div>
     </div>
     ''', unsafe_allow_html=True)
-
-    with st.expander("📜 지난 업데이트 내역 보기"):
+    
+    with st.expander("� 지난 업데이트 내역"):
         for h in UPDATE_HISTORY[1:]:
-            st.markdown(f'''
-            <div style="border-bottom:1px solid #eee; padding: 8px 0; font-size:12px;">
-                <b style="color:#555;">{h['date']} ({h['ver']})</b><br>
-                <div style="color:#666; margin-top:2px; line-height:1.3;">{h['content']}</div>
+             st.markdown(f'''
+            <div class="history-card">
+                <span class="ver-badge">{h['ver']}</span>
+                <span style="font-size:11px; color:#999; margin-left:5px;">{h['date']}</span>
+                <div style="margin-top:5px; font-size:12px; color:#555; line-height:1.4;">{h['content']}</div>
             </div>
             ''', unsafe_allow_html=True)
     st.stop()
