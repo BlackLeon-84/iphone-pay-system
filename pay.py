@@ -5,12 +5,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v2.4.5"
+SW_VERSION = "v2.4.6"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [스마트 레이아웃] 최적화 CSS ---
+# --- [스마트 레이아웃] 아이폰 100% 최적화 CSS ---
 st.markdown(f"""
     <style>
     /* 1. 전체 여백 최적화 */
@@ -22,25 +22,31 @@ st.markdown(f"""
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
 
-    /* 2. 불필요한 서식 제거 및 입력창 스타일 */
+    /* 2. 입력창 스타일 */
     hr {{ border: 0; height: 1px; background: #eee; margin: 15px 0; }}
     div[data-testid="stVerticalBlock"] > div {{ border: none !important; }}
     div[data-baseweb="base-input"] {{ border: none !important; background-color: #f1f3f5 !important; border-radius: 8px !important; }}
 
-    /* 3. ★ 핵심: 인센티브 버튼만 가로 3열 강제 고정 ★ */
-    /* 수량 입력기의 - + 버튼에 영향을 주지 않도록 클래스를 특정합니다 */
+    /* 3. ★ 아이폰용 버튼 탈출 방지 설정 ★ */
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 5px !important;
+        flex-wrap: nowrap !important; /* 절대 아래로 안 떨어짐 */
+        gap: 4px !important;
+        width: 100% !important;
     }}
-    .st-key-incen_buttons [data-testid="stHorizontalBlock"] button {{
-        font-size: 11px !important;
-        padding: 0px !important;
+    .st-key-incen_buttons [data-testid="stHorizontalBlock"] > div {{
+        flex: 1 1 0% !important;
+        min-width: 0 !important; /* 박스가 밖으로 나가는 것 방지 */
+    }}
+    .st-key-incen_buttons button {{
+        font-size: 10px !important; /* 폰트를 더 줄임 */
+        padding: 0px 1px !important; /* 좌우 여백 거의 제거 */
         width: 100% !important;
         min-height: 40px !important;
         white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: clip !important;
     }}
 
     /* 4. 텍스트 및 테이블 스타일 */
@@ -173,7 +179,7 @@ if st.session_state.incen_history:
 
 add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0)
 
-# 인센티브 버튼 영역 (ID 부여하여 CSS 적용)
+# 인센티브 버튼 영역
 with st.container(key="incen_buttons"):
     col1, col2, col3 = st.columns(3)
     if col1.button("➕추가", use_container_width=True):
