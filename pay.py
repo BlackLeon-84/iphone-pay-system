@@ -248,36 +248,40 @@ STAFF_LIST = get_staff_list_fixed()
 
 if not st.session_state.logged_in:
     st.title("🔐 로그인")
-    
-    with st.form("login_form"):
-        user_id = st.selectbox("직원 선택", options=STAFF_LIST)
-        user_pw = st.text_input("비밀번호", type="password")
-        submitted = st.form_submit_button("입장", use_container_width=True)
-    
-    if submitted:
-        cfg = load_staff_salary_config(user_id)
+
+    # [Callback] 로그인 처리 함수
+    def try_login():
+        u_id = st.session_state.login_uid
+        u_pw = st.session_state.login_pw
+        cfg = load_staff_salary_config(u_id)
         saved_hash = cfg.get("password_hash", "")
         
-        # 1. 초기 비밀번호 설정 (DB에 비번이 없을 경우)
         if not saved_hash:
-            default_pw = "102030" if user_id == "태완" else "0000"
-            if user_pw == default_pw:
-                # 로그인 성공 시 해시 저장 (자동 마이그레이션)
-                update_password(user_id, hash_password(user_pw))
-                st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
-            else:
-                st.error("초기 비밀번호가 잘못되었습니다. (태완:102030, 직원:0000)")
-        
-        # 2. 저장된 비밀번호 검증
+            default_pw = "102030" if u_id == "태완" else "0000"
+            if u_pw == default_pw:
+                update_password(u_id, hash_password(u_pw))
+                st.session_state.logged_in = True; st.session_state.user_name = u_id
+                st.session_state.login_error = None
+            else: st.session_state.login_error = "초기 비밀번호가 잘못되었습니다."
         else:
-            if check_password(user_pw, saved_hash):
-                st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
-            else:
-                st.error("비밀번호가 일치하지 않습니다.")
+            if check_password(u_pw, saved_hash):
+                st.session_state.logged_in = True; st.session_state.user_name = u_id
+                st.session_state.login_error = None
+            else: st.session_state.login_error = "비밀번호가 일치하지 않습니다."
+
+    st.selectbox("직원 선택", options=STAFF_LIST, key="login_uid")
+    st.text_input("비밀번호", type="password", key="login_pw", on_change=try_login)
+    
+    if st.button("입장", use_container_width=True, on_click=try_login): pass
+
+    if st.session_state.get("login_error"):
+        st.error(st.session_state.login_error); st.session_state.login_error = None
+    
+    if st.session_state.logged_in: st.rerun()
 
     # [New] 업데이트 히스토리 데이터 (DB 없이 코드로 관리)
     UPDATE_HISTORY = [
-        {"ver": "v4.5.1", "date": "2026-01-18", "content": "• <b>[편의성]</b> 로그인 시 엔터(Enter) 키로 입장 가능"},
+        {"ver": "v4.5.1", "date": "2026-01-18", "content": "• <b>[디자인]</b> 로그인 화면 기존 디자인 복구 (Enter키 지원 유지)<br>• <b>[편의성]</b> 로그인 시 엔터(Enter) 키로 입장 가능"},
         {"ver": "v4.5.0", "date": "2026-01-18", "content": "• <b>[동기화]</b> 날짜 선택 시 하단 리포트 즉시 자동 변경<br>• <b>[UI]</b> 월간 공제 창 '접힘' 기본값 적용<br>• <b>[UI]</b> 리포트 기간 표기 직관적 개선 ('월급' 텍스트 제거)"},
         {"ver": "v4.4.2", "date": "2026-01-18", "content": "• <b>[안정성]</b> 데이터 로딩/로그인 에러 방지 안전장치 추가<br>• <b>[기능]</b> 일일 탭 리포트 기간 선택 기능 추가"},
         {"ver": "v4.4.0", "date": "2026-01-18", "content": "• <b>[UI 혁신]</b> '일일 입력'과 '월간 정산' 탭 분리<br>• <b>[기능]</b> 카드 공제 상세 입력(내역별 추가) 기능"},
