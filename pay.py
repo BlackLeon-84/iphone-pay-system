@@ -453,14 +453,15 @@ for i in range(12):
         st_dt = get_safe_date(y, m, s_d)
     
     ed_dt = get_safe_date((st_dt + timedelta(days=33)).year, (st_dt + timedelta(days=33)).month, s_d) - timedelta(days=1)
-    # label format: 2025년 02월 (1월 13일 ~ 2월 12일)
+    # label format: 2025년 02월
     lbl_m = ed_dt.strftime("%Y년 %m월")
-    m_opts.append(f"{lbl_m} ({st_dt.month}월 {st_dt.day}일 ~ {ed_dt.month}월 {ed_dt.day}일)")
+    m_opts.append(lbl_m)
     m_ranges.append((st_dt, ed_dt))
 
 st.subheader("📊 정산 리포트 조회")
 sel_idx = st.selectbox("정산 월 선택", range(len(m_opts)), format_func=lambda x: m_opts[x])
 s_dt, e_dt = m_ranges[sel_idx]
+st.markdown(f":grey_exclamation: **정산 기간:** {s_dt.month}월 {s_dt.day}일 ~ {e_dt.month}월 {e_dt.day}일")
 
 if not df_all.empty:
     df_all['date_dt'] = pd.to_datetime(df_all['날짜']).dt.date
