@@ -258,7 +258,7 @@ if not st.session_state.logged_in:
     with st.form("login_form"):
         user_id = st.selectbox("직원 선택", options=STAFF_LIST)
         user_pw = st.text_input("비밀번호", type="password")
-        submitted = st.form_submit_button("입장", use_container_width=True) 
+        submitted = st.form_submit_button("입장", use_container_width=True, key="login_btn")
 
     if submitted:
         cfg = load_staff_salary_config(user_id)
