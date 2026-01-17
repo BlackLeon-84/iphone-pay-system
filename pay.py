@@ -7,7 +7,7 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.7.1"
+SW_VERSION = "v3.7.2"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -34,36 +34,24 @@ st.markdown(f"""
         font-size: 10px !important; padding: 0px 1px !important; width: 100% !important; min-height: 40px !important;
     }}
 
-    .admin-log {{
-        font-size: 11px; color: #155724; background-color: #d4edda; padding: 10px; border-radius: 5px; margin-top: 10px; border: 1px solid #c3e6cb;
-    }}
-    .st-key-login_btn button {{
-        height: 50px !important; font-size: 18px !important; font-weight: bold !important; background-color: #007bff !important; color: white !important;
-    }}
+    .admin-log {{ font-size: 11px; color: #155724; background-color: #d4edda; padding: 10px; border-radius: 5px; margin-top: 10px; border: 1px solid #c3e6cb; }}
+    .st-key-login_btn button {{ height: 50px !important; font-size: 18px !important; font-weight: bold !important; background-color: #007bff !important; color: white !important; }}
 
-    .status-card {{
-        padding: 12px; border-radius: 12px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 14px;
-    }}
+    .status-card {{ padding: 12px; border-radius: 12px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 14px; }}
     .status-saved {{ background-color: #e3f2fd; color: #1e88e5; border: 1px solid #bbdefb; }}
     .status-missing {{ background-color: #fff3e0; color: #ef6c00; border: 1px solid #ffe0b2; }}
 
     .weekly-box {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px; }}
     
-    /* [v3.7.1] 아이폰 2글자 헤더 최적화 9px + 타이트한 패딩 */
-    .report-table {{ width: 100%; font-size: 9px; text-align: center; border-collapse: collapse; table-layout: fixed; }}
-    .report-table th, .report-table td {{ border: 1px solid #eee; padding: 4px 0px; word-break: break-all; letter-spacing: -0.5px; }}
+    /* [v3.7.2] 아이폰 최적화 9px + 타이트한 패딩 */
+    .report-table {{ width: 100%; font-size: 8.8px; text-align: center; border-collapse: collapse; table-layout: fixed; }}
+    .report-table th, .report-table td {{ border: 1px solid #eee; padding: 4.5px 0px; word-break: break-all; letter-spacing: -0.6px; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     
-    .inc-history-box {{
-        background: #fdfdfd; border: 1px solid #f0f0f0; border-radius: 8px; padding: 8px; margin-top: 5px; font-size: 11px; color: #666;
-    }}
+    .inc-history-box {{ background: #fdfdfd; border: 1px solid #f0f0f0; border-radius: 8px; padding: 8px; margin-top: 5px; font-size: 11px; color: #666; }}
     .inc-item {{ display: inline-block; background: #eee; padding: 2px 6px; border-radius: 4px; margin: 2px; }}
     
-    .calc-detail {{ 
-        font-size: 13px; color: #333; margin: 10px 0; background: #f0f7ff; 
-        padding: 15px; border-radius: 10px; border: 1px solid #c2e0ff;
-        line-height: 1.8;
-    }}
+    .calc-detail {{ font-size: 13px; color: #333; margin: 10px 0; background: #f0f7ff; padding: 15px; border-radius: 10px; border: 1px solid #c2e0ff; line-height: 1.8; }}
     .calc-line {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
     .calc-total {{ font-size: 18px; font-weight: bold; color: #007bff; border-top: 1px dashed #abc; padding-top: 10px; margin-top: 10px; }}
     
@@ -74,9 +62,11 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 로직 ---
+# --- 구글 시트 상수 ---
 SHEET_NAME = "아이폰정산"
 ORDERED_STAFF = ["태완", "남근", "성훈"]
+# 표준 사용자 시트 헤더 (Legacy 우선 보존)
+USER_HEADER = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간", "시간수당", "퇴근시간"]
 
 def safe_int(val, default=0):
     try:
@@ -84,14 +74,11 @@ def safe_int(val, default=0):
         return int(str(val).replace(",", "").strip())
     except: return default
 
-def format_curr(val):
-    return f"{safe_int(val):,}"
+def format_curr(val): return f"{safe_int(val):,}"
 
 @st.cache_resource
 def get_gsheet_client():
-    if "gcp_service_account" not in st.secrets:
-        st.error("Secrets 설정에 gcp_service_account 정보가 없습니다.")
-        st.stop()
+    if "gcp_service_account" not in st.secrets: st.error("Secrets 설정에 gcp_service_account 정보가 없습니다."); st.stop()
     creds_info = dict(st.secrets["gcp_service_account"])
     if "private_key" in creds_info: creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
     creds = Credentials.from_service_account_info(creds_info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
@@ -106,13 +93,13 @@ def get_spreadsheet():
 
 def get_config_worksheet():
     ss = get_spreadsheet()
+    headers = ["직원명", "기본급", "정산일", "보험료"] + [f"item{i}_name" for i in range(1,8)] + [f"item{i}_price" for i in range(1,8)] + ["시간수당(10분)"]
     try:
         ws = ss.worksheet("config")
-        header = ws.row_values(1)
-        if len(header) < 19: ws.update(range_name="S1", values=[["시간수당(10분)"]])
+        curr_h = ws.row_values(1)
+        if len(curr_h) < len(headers) or curr_h[0] != "직원명": ws.update(range_name=f"A1:{chr(ord('A')+len(headers)-1)}1", values=[headers])
         return ws
     except:
-        headers = ["직원명", "기본급", "정산일", "보험료"] + [f"item{i}_name" for i in range(1,8)] + [f"item{i}_price" for i in range(1,8)] + ["시간수당(10분)"]
         ws = ss.add_worksheet(title="config", rows="100", cols="20")
         ws.append_row(headers); return ws
 
@@ -160,19 +147,22 @@ def save_staff_salary_config(name, base, day, ins, names, prices, ov_rate=0):
 def get_user_worksheet(user_name):
     ss = get_spreadsheet()
     try:
-        ws = ss.worksheet(user_name); header = ws.row_values(1)
-        if "시간수당" not in header: ws.update(range_name="N1:O1", values=[["시간수당", "퇴근시간"]])
+        ws = ss.worksheet(user_name); curr_h = ws.row_values(1)
+        # [v3.7.2] 헤더 강제 표준화 (순서 꼬임 및 시간수당 위치 수정)
+        if len(curr_h) < len(USER_HEADER) or "시간수당" not in curr_h or curr_h[3] != "item1":
+            ws.update(range_name=f"A1:{chr(ord('A')+len(USER_HEADER)-1)}1", values=[USER_HEADER])
         return ws
     except:
         ws = ss.add_worksheet(title=user_name, rows="1000", cols="20")
-        ws.append_row(["직원명", "날짜", "인센티브", "시간수당", "퇴근시간", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"]); return ws
+        ws.append_row(USER_HEADER); return ws
 
 def load_data_from_gsheet(user_name):
     try:
         sheet = get_user_worksheet(user_name); data = sheet.get_all_values()
         if len(data) <= 1: return pd.DataFrame()
         df = pd.DataFrame(data[1:], columns=data[0])
-        for c in ["인센티브", "시간수당", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계"]:
+        num_cols = ["인센티브", "시간수당", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계"]
+        for c in num_cols:
             if c in df.columns: df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", ""), errors='coerce').fillna(0).astype(int)
         return df
     except: return pd.DataFrame()
@@ -182,9 +172,14 @@ def save_to_gsheet(user_name, df_row):
         sheet = get_user_worksheet(user_name); rows = sheet.get_all_values(); idx = -1
         for i, r in enumerate(rows):
             if len(r) > 1 and r[1] == df_row['날짜']: idx = i + 1; break
-        header = ["직원명", "날짜", "인센티브", "시간수당", "퇴근시간", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"]
-        vals = [format_curr(df_row.get(h, 0)) if h in ["인센티브", "시간수당", "합계"] or "item" in h else df_row.get(h, "") for h in header]
-        if idx != -1: sheet.update(range_name=f"A{idx}:O{idx}", values=[vals])
+        # [v3.7.2] 표준 헤더 USER_HEADER 에 따라 데이터를 리스트화
+        vals = []
+        for h in USER_HEADER:
+            v = df_row.get(h, "")
+            if h in ["인센티브", "시간수당", "합계"] or "item" in h: vals.append(format_curr(v))
+            else: vals.append(v)
+        
+        if idx != -1: sheet.update(range_name=f"A{idx}:{chr(ord('A')+len(USER_HEADER)-1)}{idx}", values=[vals])
         else: sheet.append_row(vals)
         return True
     except: return False
@@ -192,7 +187,7 @@ def save_to_gsheet(user_name, df_row):
 def get_safe_date(y, m, d): ld = calendar.monthrange(y, m)[1]; return date(y, m, min(safe_int(d, 1), ld))
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 메인 코드 ---
+# --- 실행 체크 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 STAFF_LIST = get_dynamic_staff_list()
 
@@ -203,7 +198,7 @@ if not st.session_state.logged_in:
     if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.session_state.salary_cfg = load_staff_salary_config(user_id); st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 리포트 최적화</b><br>• 태완/남근 전용 수당 입력 UI 적용<br>• 리포트 표 헤더 2글자 확대 (가독성 상향)<br>• 비대상 직원 수당 항목 인센티브 자동 합산 표기</div>', unsafe_allow_html=True); st.stop()
+    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 데이터 정규화 완료</b><br>• 시간수당 컬럼 위치 오류 긴급 수정<br>• 구글 시트 헤더 자동 교정 시스템 적용<br>• 품목 및 수당 항목 간의 열 불일치 해결</div>', unsafe_allow_html=True); st.stop()
 
 user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
 is_ov_staff = user_name in ["태완", "남근"]
@@ -266,7 +261,8 @@ if "inc_sum" not in st.session_state or st.session_state.get("last_date") != str
 ov_pay, sel_etime = 0, "20:00"
 if is_ov_staff:
     etime_list = [f"{h}:{m:02d}" for h in range(20, 24) for m in range(0, 60, 10)] + ["24:00"]
-    e_idx = etime_list.index(existing.iloc[0]["퇴근시간"]) if not existing.empty and existing.iloc[0]["퇴근시간"] in etime_list else 0
+    e_val = existing.iloc[0]["퇴근시간"] if not existing.empty else "20:00"
+    e_idx = etime_list.index(e_val) if e_val in etime_list else 0
     sel_etime = st.selectbox("퇴근 시간", options=etime_list, index=e_idx)
     h, m = map(int, sel_etime.split(":")) if sel_etime != "24:00" else (24, 0)
     ov_min = max(0, (h * 60 + m) - 1200); ov_pay = (ov_min // 10) * sal_cfg["overtime_rate"]
@@ -294,7 +290,9 @@ for i in range(0, 6, 2):
 cts.append(st.number_input(it_n[6], 0, value=safe_int(existing.iloc[0]['item7']) if not existing.empty else 0, key="it_6"))
 
 if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
-    tot_val = st.session_state.inc_sum + ov_pay + sum([safe_int(c) * safe_int(p) for c, p in zip(cts, it_p)])
+    # 합계 계산 시 인센티브 + 수당 + 품목 합계
+    item_val = sum([safe_int(c) * safe_int(p) for c, p in zip(cts, it_p)])
+    tot_val = st.session_state.inc_sum + ov_pay + item_val
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "시간수당": ov_pay, "퇴근시간": sel_etime, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": tot_val, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success("저장 완료!"); st.rerun()
 
@@ -314,14 +312,12 @@ if not df_all.empty:
         t_items = safe_int(p_df["합계"].sum()) - t_inc - t_ov
         final_pay = int(b + t_inc + t_ov + t_items - ins)
         
-        # [v3.7.1] 정산 상세 명칭 합산 (비대상직원)
         inc_label = "인센티브" if is_ov_staff else "인센/수당"
         inc_val = t_inc + t_items if is_ov_staff else t_inc + t_items + t_ov
         breakdown_html = f'<div class="calc-detail"><div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div><div class="calc-line"><span>{inc_label}</span> <span>+ {inc_val:,}원</span></div>'
         if is_ov_staff: breakdown_html += f'<div class="calc-line"><span>시간수당</span> <span>+ {t_ov:,}원</span></div>'
         st.markdown(breakdown_html + f'<div class="calc-line"><span>보험료</span> <span>- {ins:,}원</span></div><div class="calc-total"><div class="calc-line"><span>💰 총급여</span> <span>{final_pay:,}원</span></div></div></div>', unsafe_allow_html=True)
 
-        # [v3.7.1] 표 헤더 2글자 복구 및 시간수당 제어
         hds = ["날짜", "인센"] + (["수당"] if is_ov_staff else []) + [n[:2] for n in it_n] + ["합계"]
         r_html, i_sums = "", [0]*7
         for _, r in p_df.iterrows():
@@ -331,7 +327,6 @@ if not df_all.empty:
                 row_inc, row_ov = safe_int(r['인센티브']), safe_int(r.get('시간수당', 0))
                 it_tds = "".join([f"<td>{safe_int(r[f'item{i}'])}</td>" for i in range(1, 8)])
                 for i in range(1, 8): i_sums[i-1] += safe_int(r[f'item{i}'])
-                # 비대상직원은 시간수당을 인센티브에 합산하여 표시
                 disp_inc = row_inc if is_ov_staff else row_inc + row_ov
                 ov_td = f"<td>{row_ov:,}</td>" if is_ov_staff else ""
                 r_html += f"<tr><td style='font-weight:bold;'>{md}</td><td>{disp_inc:,}</td>{ov_td}{it_tds}<td style='color:blue;'>{safe_int(r['합계']):,}</td></tr>"
