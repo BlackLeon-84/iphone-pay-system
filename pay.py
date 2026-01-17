@@ -191,18 +191,26 @@ def get_user_worksheet(user_name):
         return ws
     except:
         ws = ss.add_worksheet(title=user_name, rows="1000", cols="20")
-        ws.append_row(USER_HEADER); return ws
-
+        ws.append_row(USER_HEADER); # --- 데이터 로드/저장 ---
+@st.cache_data(ttl=60)
 def load_data_from_gsheet(user_name):
     try:
-        sheet = get_user_worksheet(user_name); data = sheet.get_all_values()
-        if len(data) <= 1: return pd.DataFrame()
+        sheet = get_user_worksheet(user_name)
+        data = sheet.get_all_values()
+        if len(data) < 2: return pd.DataFrame(columns=USER_HEADER)
         df = pd.DataFrame(data[1:], columns=data[0])
+        
+        # 컬럼 부족 시 보정 (구버전 데이터 호환)
+        for col in USER_HEADER:
+            if col not in df.columns: df[col] = 0 if col in ["현금", "카드", "카드제외", "기타"] else ""
+            
         num_cols = ["인센티브", "시간수당", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "현금", "카드", "카드제외", "기타"]
         for c in num_cols:
             if c in df.columns: df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", ""), errors='coerce').fillna(0).astype(int)
         return df
-    except: return pd.DataFrame()
+    except Exception as e:
+        # print(f"Error loading data: {e}") # 디버깅용
+        return pd.DataFrame(columns=USER_HEADER)
 
 def save_to_gsheet(user_name, df_row):
     try:
@@ -580,7 +588,47 @@ with tab_daily:
     # [New] 하단 리포트 표시 (조회 전용)
     st.divider()
     st.markdown("##### 📊 이달의 정산 현황 (미리보기)")
-    render_monthly_report(df_all, sel_date, sal_cfg, is_ov_staff, user_name, readonly=True)
+    
+    # 리포트 월 선택기 (일일 입력 탭용)
+    # 1. 옵션 생성 (최근 12개월)
+    d_m_opts, d_m_ranges = [], []
+    curr = date.today()
+    if curr.day >= safe_int(sal_cfg['start_day'], 13): t_st = date(curr.year, curr.month, safe_int(sal_cfg['start_day'], 13))
+    else:
+        prv = curr.replace(day=1) - timedelta(days=1)
+        t_st = get_safe_date(prv.year, prv.month, safe_int(sal_cfg['start_day'], 13))
+
+    for i in range(12):
+        st_dt = get_safe_date((t_st - timedelta(days=32*i)).year, (t_st - timedelta(days=32*i)).month, safe_int(sal_cfg['start_day'], 13))
+        if i > 0:
+            y, m = t_st.year, t_st.month - i
+            while m < 1: y -= 1; m += 12
+            st_dt = get_safe_date(y, m, safe_int(sal_cfg['start_day'], 13))
+        
+        ed_dt = get_safe_date((st_dt + timedelta(days=33)).year, (st_dt + timedelta(days=33)).month, safe_int(sal_cfg['start_day'], 13)) - timedelta(days=1)
+        lbl_m = ed_dt.strftime("%Y년 %m월")
+        d_m_opts.append(lbl_m)
+        d_m_ranges.append((st_dt, ed_dt))
+
+    # 2. 날짜 선택(sel_date)에 맞는 월 자동 찾기
+    default_idx = 0
+    for i, (s, e) in enumerate(d_m_ranges):
+        if s <= sel_date <= e: default_idx = i; break
+    
+    # 3. 선택기 표시
+    sel_r_idx = st.selectbox("리포트 기간 선택", range(len(d_m_opts)), index=default_idx, format_func=lambda x: d_m_opts[x], key="daily_report_month")
+    
+    # 4. 렌더링
+    r_s_dt, r_e_dt = d_m_ranges[sel_r_idx]
+    
+    # [Fix] render_monthly_report가 date가 아닌 range를 받도록 수정 필요하거나, 여기서 target_date를 넘겨야 함.
+    # 기존 함수는 target_date를 받아서 기간을 내부에서 다시 계산함. -> 비효율적/불일치 발생 가능.
+    # 함수를 수정하여 (s_dt, e_dt)를 직접 받도록 오버로딩하거나, target_date를 e_dt ("정산 종료일" 기준)로 넘기면 됨.
+    # render_monthly_report 내부 로직: target_date가 s_d보다 작으면 전월, 크면 당월...
+    # e_dt (종료일)은 항상 s_d보다 작음 (하루 전이니까). 
+    # 예: 1/13~2/12. Start=13. e_dt=2/12.
+    # render에 2/12를 넘기면? 12 < 13 -> 전월(1/13~2/12)로 계산됨. Correct.
+    render_monthly_report(df_all, r_e_dt, sal_cfg, is_ov_staff, user_name, readonly=True)
 
 # --- 탭 2: 월간 정산 ---
 with tab_report:
