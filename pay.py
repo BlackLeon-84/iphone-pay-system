@@ -5,14 +5,15 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.1.7"
+SW_VERSION = "v3.1.8"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [v3.0.8 기반] 아이폰 최적화 CSS ---
+# --- [v3.0.8 기반 분석] 최적화 CSS ---
 st.markdown(f"""
     <style>
+    /* 전체 레이아웃 (v3.0.8 복구) */
     .block-container {{
         padding-top: 3.5rem !important;
         max-width: 450px !important;
@@ -20,18 +21,20 @@ st.markdown(f"""
         padding-right: 10px !important;
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
-    hr {{ border: 0; height: 1px; background: #eee; margin: 15px 0; }}
-    div[data-baseweb="base-input"] {{ border: none !important; background-color: #f1f3f5 !important; border-radius: 8px !important; }}
-
-    /* 인센티브 버튼 세로 배치 */
+    
+    /* 인센티브 버튼 전용: 세로 1열 배치 (에러 방지 핵심) */
     .st-key-incen_buttons button {{
         width: 100% !important;
-        margin-bottom: 5px !important;
-        min-height: 45px !important;
-        font-size: 14px !important;
-        font-weight: bold !important;
+        margin-bottom: 8px !important;
+        min-height: 48px !important;
+        font-size: 15px !important;
+        font-weight: 800 !important;
+        border-radius: 10px !important;
     }}
 
+    /* 품목 입력칸(가로 2열)은 건드리지 않음 (v3.0.8 디자인 유지) */
+
+    /* 로그인 버튼 스타일 */
     .st-key-login_btn button {{
         height: 50px !important;
         font-size: 18px !important;
@@ -40,11 +43,10 @@ st.markdown(f"""
         color: white !important;
     }}
 
+    /* 테이블 스타일 */
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
     .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
-    .calc-detail {{ font-size: 11px; color: #888; margin-top: -5px; margin-bottom: 10px; }}
-    .incen-log {{ font-size: 11px; color: #666; padding: 8px; background: #fcfcfc; border-radius: 5px; border-left: 3px solid #ddd; margin: 10px 0; }}
     .save-log {{ font-size: 12px; color: #1e88e5; font-weight: bold; margin-bottom: 5px; }}
     .update-log {{ font-size: 11px; color: #777; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 30px; border: 1px solid #eee; }}
     </style>
@@ -104,7 +106,7 @@ if "config_dict" not in st.session_state:
         "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]
     } for name in STAFF_LIST}
 
-# --- 로그인 페이지 ---
+# --- 로그인 화면 ---
 if not st.session_state.logged_in:
     st.title("🔐 로그인")
     user_id = st.selectbox("직원 선택", options=STAFF_LIST)
@@ -113,25 +115,24 @@ if not st.session_state.logged_in:
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     
-    now_d = get_now_kst().strftime("%Y-%m-%d")
     st.markdown(f"""
         <div class="update-log">
-            <b>🚀 시스템 업데이트 로그 ({now_d})</b><br>
-            • <b>최근 7일 기록 복구</b>: 출근 현황 체크 메뉴 재활성화<br>
-            • <b>버튼 레이아웃 최적화</b>: 인센티브 버튼 세로 배치로 클릭 편의성 향상<br>
-            • <b>리포트 정밀화</b>: 정산 주기 및 날짜 표기 기능 보완
+            <b>🚀 시스템 업데이트 로그 ({get_now_kst().strftime("%Y-%m-%d")})</b><br>
+            • <b>디자인 분석 최적화</b>: 인센 버튼을 세로로 배치하여 다른 입력창과의 충돌 해결<br>
+            • <b>최근 7일 기록 복구</b>: 메인 화면에서 출근 현황 즉시 확인<br>
+            • <b>레이아웃 고정</b>: 모바일 화면에서 요소가 겹치거나 튀어나오는 현상 제거
         </div>
     """, unsafe_allow_html=True)
     st.stop()
 
-# --- 메인 로직 ---
+# --- 메인 본문 ---
 user_name = st.session_state.user_name
 cfg = st.session_state.config_dict[user_name]
 
 with st.sidebar:
     st.header("⚙️ 설정")
     if user_name == "태완":
-        target_staff = st.selectbox("수정 대상 직원", STAFF_LIST)
+        target_staff = st.selectbox("수정 대상", STAFF_LIST)
         t_cfg = st.session_state.config_dict[target_staff]
         new_names = []; new_prices = []
         for i in range(7):
@@ -140,11 +141,11 @@ with st.sidebar:
             p = c2.number_input(f"가격{i+1}", value=int(t_cfg["item_prices"][i]), step=1000, key=f"sp_{target_staff}_{i}")
             new_names.append(n); new_prices.append(p)
         base = st.number_input("기본급", value=int(t_cfg["base_salary"]))
-        s_day = st.slider("정산 시작일", 1, 31, t_cfg["start_day"])
+        s_day = st.slider("시작일", 1, 31, t_cfg["start_day"])
         ins = st.number_input("보험료", value=int(t_cfg["insurance"]))
-        if st.button(f"💿 {target_staff} 설정 저장", use_container_width=True):
+        if st.button("💿 설정 저장", use_container_width=True):
             st.session_state.config_dict[target_staff].update({"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices})
-            st.success("설정 저장 완료"); st.rerun()
+            st.success("저장 완료"); st.rerun()
     if st.button("로그아웃"): st.session_state.logged_in = False; st.rerun()
 
 st.markdown(f'<div class="version-tag">{SW_VERSION}</div>', unsafe_allow_html=True)
@@ -154,19 +155,18 @@ st.write(f"### 💼 {user_name}님 실적")
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
+# 기존 기록 확인
 existing_row = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
 is_edit = not existing_row.empty
 
 if is_edit:
     st.markdown(f'<div class="save-log">📝 {str_date} {existing_row.iloc[0].get("입력시간", "")} 저장됨</div>', unsafe_allow_html=True)
-else:
-    st.markdown(f'<div style="font-size:12px; color:#999; margin-bottom:5px;">⚪ {str_date}에 저장된 기록이 없습니다.</div>', unsafe_allow_html=True)
 
 if st.button("🌴 오늘 휴무 등록", use_container_width=True):
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.rerun()
 
-# --- [복구] 최근 7일 기록 섹션 ---
+# --- 최근 7일 기록 ---
 st.write("**📅 최근 7일 기록**")
 weekly_html = '<div style="display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px;">'
 today_kst = get_now_kst().date()
@@ -179,17 +179,17 @@ for i in range(6, -1, -1):
 st.markdown(weekly_html + '</div>', unsafe_allow_html=True)
 
 st.divider()
+
+# 인센티브 계산 로직
 if "incen_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
     st.session_state.incen_sum = int(existing_row.iloc[0]["인센티브"]) if is_edit else 0
     st.session_state.incen_history = [{"val": int(existing_row.iloc[0]["인센티브"]), "time": "기존"}] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
     st.session_state.last_date = str_date
 
 st.write(f"**💰 인센 합계: {st.session_state.incen_sum:,}원**")
-if st.session_state.incen_history:
-    st.markdown(f'<div class="incen-log">📋 상세: {" / ".join([f"{h['val']:,}" for h in st.session_state.incen_history])}</div>', unsafe_allow_html=True)
-
 add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
+# --- 세로 버튼 배치 (디자인 분석 반영) ---
 with st.container(key="incen_buttons"):
     if st.button("➕ 인센티브 추가"):
         st.session_state.incen_sum += add_amt
@@ -230,7 +230,6 @@ if not df_all.empty:
     if not p_df.empty:
         total_extra = p_df["합계"].sum()
         st.write(f"**🏦 예상 수령: {int(cfg['base_salary'] + total_extra - cfg['insurance']):,}원**")
-        st.markdown(f'<div class="calc-detail">(기본 {cfg["base_salary"]:,} + 추가 {total_extra:,} - 보험 {cfg["insurance"]:,})</div>', unsafe_allow_html=True)
         
         headers = ["날", "인센"] + [n[:1] for n in cfg["item_names"]] + ["합계"]
         rows_html = ""; item_sums = [0]*7
