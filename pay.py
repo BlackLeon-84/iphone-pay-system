@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.3.3"
+SW_VERSION = "v3.3.4"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -77,10 +77,17 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 및 직원 설정 로직 ---
+# --- 기본 데이터 설정 ---
 SHEET_NAME = "아이폰정산"
-STAFF_LIST = ["태완", "남근", "성훈"] # 여기에 이름을 추가하면 자동으로 시스템에 반영됩니다.
+STAFF_LIST = ["태완", "남근", "성훈"]
 
+# 품목 정보 (코드 내 고정 관리)
+ITEM_INFO = {
+    "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
+    "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]
+}
+
+# --- 구글 시트 로직 ---
 def get_gsheet_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     if "gcp_service_account" in st.secrets:
@@ -97,45 +104,34 @@ def get_config_worksheet():
     try:
         return spreadsheet.worksheet("config")
     except:
-        new_sheet = spreadsheet.add_worksheet(title="config", rows="100", cols="35")
-        headers = ["직원명", "기본급", "보험료", "정산일", "명칭1", "가격1", "명칭2", "가격2", "명칭3", "가격3", "명칭4", "가격4", "명칭5", "가격5", "명칭6", "가격6", "명칭7", "가격7"]
-        new_sheet.append_row(headers)
+        new_sheet = spreadsheet.add_worksheet(title="config", rows="100", cols="5")
+        new_sheet.append_row(["직원명", "기본급", "정산일", "보험료"])
         return new_sheet
 
-def load_staff_config(name):
+def load_staff_salary_config(name):
+    """시트에서 기본급, 정산일, 보험료만 불러옴"""
     sheet = get_config_worksheet()
     data = sheet.get_all_records()
     for row in data:
         if row["직원명"] == name:
-            return {
-                "base_salary": int(row["기본급"]), "insurance": int(row["보험료"]), "start_day": int(row["정산일"]),
-                "item_names": [row[f"명칭{i}"] for i in range(1, 8)],
-                "item_prices": [int(row[f"가격{i}"]) for i in range(1, 8)]
-            }
-    # 기본값 설정
-    default = {"base_salary": 3500000, "start_day": 13, "insurance": 104760, 
-               "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
-               "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]}
-    # 시트에 없는 신규 직원이면 기본값 추가
-    new_row = [name, default["base_salary"], default["insurance"], default["start_day"]]
-    for n, p in zip(default["item_names"], default["item_prices"]):
-        new_row.extend([n, p])
-    sheet.append_row(new_row)
+            return {"base_salary": int(row["기본급"]), "start_day": int(row["정산일"]), "insurance": int(row["보험료"])}
+    
+    # 없을 경우 초기값 생성
+    default = {"base_salary": 3500000, "start_day": 13, "insurance": 104760}
+    sheet.append_row([name, default["base_salary"], default["start_day"], default["insurance"]])
     return default
 
-def save_staff_config(name, cfg):
+def save_staff_salary_config(name, base, day, ins):
+    """시트에 기본급, 정산일, 보험료만 저장"""
     sheet = get_config_worksheet()
     all_rows = sheet.get_all_values()
     row_idx = -1
     for i, row in enumerate(all_rows):
         if row[0] == name: row_idx = i + 1; break
     
-    new_data = [name, cfg["base_salary"], cfg["insurance"], cfg["start_day"]]
-    for n, p in zip(cfg["item_names"], cfg["item_prices"]):
-        new_data.extend([n, p])
-    
+    new_data = [name, base, day, ins]
     if row_idx != -1:
-        sheet.update(range_name=f"A{row_idx}:R{row_idx}", values=[new_data])
+        sheet.update(range_name=f"A{row_idx}:D{row_idx}", values=[new_data])
     else:
         sheet.append_row(new_data)
 
@@ -185,13 +181,13 @@ if not st.session_state.logged_in:
         else: 
             st.session_state.logged_in = True
             st.session_state.user_name = user_id
-            st.session_state.config = load_staff_config(user_id)
+            st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 설정 데이터 전용 탭(config) 신설<br>• 직원 추가 시 자동 시트 생성 로직 강화<br>• 관리자 설정값 영구 저장 및 리포트 오류 수정</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 핵심 급여 데이터만 시트 연동 (config 탭)<br>• 품목 정보는 코드 내 고정 관리하여 안정성 강화<br>• 아이폰 최적화 레이아웃 보존</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name = st.session_state.user_name
-cfg = st.session_state.config
+sal_cfg = st.session_state.salary_cfg
 
 # --- 사이드바 ---
 with st.sidebar:
@@ -199,24 +195,16 @@ with st.sidebar:
     if user_name == "태완":
         st.subheader("🛠️ 관리자 설정")
         target_staff = st.selectbox("수정 대상 직원", STAFF_LIST)
-        # 대상 직원의 최신 설정을 시트에서 불러오기
-        t_cfg = load_staff_config(target_staff)
+        t_sal = load_staff_salary_config(target_staff)
         
-        new_names = []; new_prices = []
-        for i in range(7):
-            c1, c2 = st.columns(2)
-            n = c1.text_input(f"명칭{i+1}", value=t_cfg["item_names"][i], key=f"sn_{target_staff}_{i}")
-            p = c2.number_input(f"가격{i+1}", value=t_cfg["item_prices"][i], step=1000, key=f"sp_{target_staff}_{i}")
-            new_names.append(n); new_prices.append(p)
-        base = st.number_input("기본급", value=t_cfg["base_salary"])
-        s_day = st.slider("정산 시작일", 1, 31, t_cfg["start_day"])
-        ins = st.number_input("보험료", value=t_cfg["insurance"])
+        base = st.number_input("기본급", value=t_sal["base_salary"])
+        s_day = st.slider("정산 시작일", 1, 31, t_sal["start_day"])
+        ins = st.number_input("보험료", value=t_sal["insurance"])
         
-        if st.button(f"💿 {target_staff} 설정 저장", use_container_width=True):
-            updated_cfg = {"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices}
-            save_staff_config(target_staff, updated_cfg)
-            if target_staff == user_name: st.session_state.config = updated_cfg
-            st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] {target_staff}님 설정 저장됨"
+        if st.button(f"💿 {target_staff} 급여정보 시트 저장", use_container_width=True):
+            save_staff_salary_config(target_staff, base, s_day, ins)
+            if target_staff == user_name: st.session_state.salary_cfg = {"base_salary": base, "start_day": s_day, "insurance": ins}
+            st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] {target_staff}님 정보 저장됨"
             st.rerun()
         if "admin_log" in st.session_state:
             st.markdown(f'<div class="admin-log">{st.session_state.admin_log}</div>', unsafe_allow_html=True)
@@ -278,12 +266,12 @@ st.markdown('<div class="section-header">📦 품목 수량 입력</div>', unsaf
 counts = []
 for i in range(0, 6, 2):
     c1, c2 = st.columns(2)
-    with c1: counts.append(st.number_input(cfg["item_names"][i], 0, value=int(existing_row.iloc[0][f'item{i+1}']) if is_edit else 0, key=f"it_{i}"))
-    with c2: counts.append(st.number_input(cfg["item_names"][i+1], 0, value=int(existing_row.iloc[0][f'item{i+2}']) if is_edit else 0, key=f"it_{i+1}"))
-counts.append(st.number_input(cfg["item_names"][6], 0, value=int(existing_row.iloc[0]['item7']) if is_edit else 0, key="it_6"))
+    with c1: counts.append(st.number_input(ITEM_INFO["item_names"][i], 0, value=int(existing_row.iloc[0][f'item{i+1}']) if is_edit else 0, key=f"it_{i}"))
+    with c2: counts.append(st.number_input(ITEM_INFO["item_names"][i+1], 0, value=int(existing_row.iloc[0][f'item{i+2}']) if is_edit else 0, key=f"it_{i+1}"))
+counts.append(st.number_input(ITEM_INFO["item_names"][6], 0, value=int(existing_row.iloc[0]['item7']) if is_edit else 0, key="it_6"))
 
 if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
-    item_total = sum([int(c) * int(p) for c, p in zip(counts, cfg["item_prices"])])
+    item_total = sum([int(c) * int(p) for c, p in zip(counts, ITEM_INFO["item_prices"])])
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, 
            "item1": counts[0], "item2": counts[1], "item3": counts[2], "item4": counts[3], 
            "item5": counts[4], "item6": counts[5], "item7": counts[6], 
@@ -293,7 +281,7 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
 # --- 정산 리포트 ---
 st.divider()
 st.subheader("📊 정산 리포트")
-s_day, base, ins = cfg['start_day'], cfg['base_salary'], cfg['insurance']
+s_day, base, ins = sal_cfg['start_day'], sal_cfg['base_salary'], sal_cfg['insurance']
 start_dt = date(sel_date.year, sel_date.month, s_day) if sel_date.day >= s_day else (date(sel_date.year, sel_date.month, s_day) - timedelta(days=30)).replace(day=s_day)
 end_dt = (start_dt + timedelta(days=32)).replace(day=s_day) - timedelta(days=1)
 
@@ -303,7 +291,7 @@ if not df_all.empty:
         total_extra = p_df["합계"].sum()
         st.write(f"**🏦 예상 수령: {int(base + total_extra - ins):,}원**")
         st.markdown(f'<div style="font-size:11px; color:#888; margin-top:-5px;">(기본 {base:,} + 추가 {total_extra:,} - 보험 {ins:,})</div>', unsafe_allow_html=True)
-        headers = ["날", "인센"] + [n[:1] for n in cfg["item_names"]] + ["합계"]
+        headers = ["날", "인센"] + [n[:1] for n in ITEM_INFO["item_names"]] + ["합계"]
         rows_html = ""; item_sums = [0]*7
         for _, r in p_df.iterrows():
             d = datetime.strptime(r['날짜'], '%Y-%m-%d').day
