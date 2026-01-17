@@ -7,7 +7,7 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.9.1"
+SW_VERSION = "v4.0.0"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -27,7 +27,6 @@ st.markdown(f"""
         padding-left: 5px; border-left: 4px solid #007bff;
     }}
     
-    /* [v3.9.1] 아이폰 3단 버튼 완벽 가로 정렬 강제 */
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
@@ -80,7 +79,8 @@ st.markdown(f"""
 
 # --- 구글 시트 상수 ---
 SHEET_NAME = "아이폰정산"
-ORDERED_STAFF = ["태완", "남근", "성훈"]
+# [v4.0.0] 성욱 직원 추가
+ORDERED_STAFF = ["태완", "남근", "성훈", "성욱"]
 USER_HEADER = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간", "시간수당", "퇴근시간"]
 
 def safe_int(val, default=0):
@@ -117,24 +117,15 @@ def get_config_worksheet():
         ws = ss.add_worksheet(title="config", rows="100", cols="20")
         ws.append_row(headers); return ws
 
-@st.cache_data(ttl=600)
-def get_dynamic_staff_list():
-    try:
-        sheet = get_config_worksheet(); names = sheet.col_values(1)[1:]
-        res = []
-        for s in ORDERED_STAFF:
-            if s in names or s in ORDERED_STAFF: res.append(s)
-        for n in names:
-            if n and n not in res: res.append(n)
-        return res
-    except: return ORDERED_STAFF
-
 @st.cache_data(ttl=300)
 def load_staff_salary_config(name):
     try: sheet = get_config_worksheet(); rows = sheet.get_all_values()
-    except: return {"base_salary": 3500000, "start_day": 13, "insurance": 104760, "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'], "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0], "overtime_rate": 0, "apply_global": False}
+    except: return None
     
-    defaults = {"base_salary": 3500000, "start_day": 13, "insurance": 104760, "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'], "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0], "overtime_rate": 4000 if name == "태완" else (3000 if name == "남근" else 0), "apply_global": False}
+    # [v4.0.0] 성욱 님 기본값은 성훈 님 데이터 기반
+    base_template_name = "성훈" if name == "성욱" else ""
+    template_data = None
+    
     if len(rows) > 1:
         hd = rows[0]
         for r in rows[1:]:
@@ -142,11 +133,29 @@ def load_staff_salary_config(name):
                 d = {hd[i]: r[i] for i in range(min(len(hd), len(r)))}
                 return {
                     "base_salary": safe_int(d.get("기본급"), 3500000), "start_day": safe_int(d.get("정산일"), 13), "insurance": safe_int(d.get("보험료"), 104760),
-                    "item_names": [d.get(f"item{i}_name", defaults["item_names"][i-1]) or defaults["item_names"][i-1] for i in range(1,8)],
-                    "item_prices": [safe_int(d.get(f"item{i}_price"), defaults["item_prices"][i-1]) for i in range(1,8)],
-                    "overtime_rate": safe_int(d.get("시간수당(10분)"), defaults["overtime_rate"]),
-                    "apply_global": d.get("전체적용", "FALSE").upper() == "TRUE"
+                    "item_names": [d.get(f"item{i}_name") or "" for i in range(1,8)],
+                    "item_prices": [safe_int(d.get(f"item{i}_price")) for i in range(1,8)],
+                    "overtime_rate": safe_int(d.get("시간수당(10분)")), "apply_global": d.get("전체적용", "FALSE").upper() == "TRUE"
                 }
+            if base_template_name and r and r[0] == base_template_name:
+                template_data = r
+        
+    # 데이터가 없을 경우
+    if template_data:
+        hd = rows[0]
+        d = {hd[i]: template_data[i] for i in range(min(len(hd), len(template_data)))}
+        res = {
+            "base_salary": safe_int(d.get("기본급"), 3500000), "start_day": safe_int(d.get("정산일"), 13), "insurance": safe_int(d.get("보험료"), 104760),
+            "item_names": [d.get(f"item{i}_name") or "" for i in range(1,8)],
+            "item_prices": [safe_int(d.get(f"item{i}_price")) for i in range(1,8)],
+            "overtime_rate": safe_int(d.get("시간수당(10분)")), "apply_global": d.get("전체적용", "FALSE").upper() == "TRUE"
+        }
+        # 성욱 님 초기 설정 강제 저장
+        save_staff_salary_config(name, res["base_salary"], res["start_day"], res["insurance"], res["item_names"], res["item_prices"], res["overtime_rate"], res["apply_global"])
+        return res
+    
+    # 완전 쌩 기본값
+    defaults = {"base_salary": 3500000, "start_day": 13, "insurance": 104760, "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'], "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0], "overtime_rate": 4000 if name == "태완" else (3000 if name == "남근" else 0), "apply_global": False}
     save_staff_salary_config(name, defaults["base_salary"], defaults["start_day"], defaults["insurance"], defaults["item_names"], defaults["item_prices"], defaults["overtime_rate"], defaults["apply_global"])
     return defaults
 
@@ -157,7 +166,6 @@ def save_staff_salary_config(name, base, day, ins, names, prices, ov_rate=0, app
     data = [name, format_curr(base), safe_int(day), format_curr(ins)] + names + [format_curr(p) for p in prices] + [format_curr(ov_rate), str(apply_global).upper()]
     if idx != -1: sheet.update(range_name=f"A{idx}:{chr(ord('A')+len(data)-1)}{idx}", values=[data])
     else: sheet.append_row(data)
-    # 캐시 무효화로 강제 동기화
     st.cache_data.clear()
 
 def get_user_worksheet(user_name):
@@ -196,9 +204,22 @@ def save_to_gsheet(user_name, df_row):
 def get_safe_date(y, m, d): ld = calendar.monthrange(y, m)[1]; return date(y, m, min(safe_int(d, 1), ld))
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 실행 로직 ---
+# --- 실행 체크 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
-STAFF_LIST = get_dynamic_staff_list()
+
+@st.cache_data(ttl=600)
+def get_staff_list_fixed():
+    try:
+        sheet = get_config_worksheet(); names = sheet.col_values(1)[1:]
+        res = []
+        for s in ORDERED_STAFF:
+            if (s in names or s in ORDERED_STAFF) and s not in res: res.append(s)
+        for n in names:
+            if n and n not in res: res.append(n)
+        return res
+    except: return ORDERED_STAFF
+
+STAFF_LIST = get_staff_list_fixed()
 
 if not st.session_state.logged_in:
     st.title("🔐 로그인")
@@ -207,9 +228,9 @@ if not st.session_state.logged_in:
     if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
-    st.markdown(f'<div class="admin-log"><b>🕒 {get_now_kst().strftime("%H:%M:%S")} 기준 업데이트 로그</b><br>• [v3.9.1] 단가 변경 실시간 동기화 버그 수정<br>• 리포트 소급 적용 로직 안정화 완료</div>', unsafe_allow_html=True); st.stop()
+    st.markdown(f'<div class="admin-log"><b>🕒 {get_now_kst().strftime("%H:%M:%S")} v4.0.0 업데이트</b><br>• 신규 직원 [성욱] 추가 (성훈 데이터 기반)<br>• 날짜 변경 시 입력값 자동 0점 초기화 기능 도입<br>• 인센티브 연속 입력 및 취소 로직 정밀화</div>', unsafe_allow_html=True); st.stop()
 
-# [v3.9.1] 로그인 후 항상 최신 설정을 로드하여 실시간 동기화 보장
+# 최신 설정 로드
 user_name = st.session_state.user_name
 sal_cfg = load_staff_salary_config(user_name)
 is_ov_staff = user_name in ["태완", "남근"]
@@ -242,10 +263,7 @@ with st.sidebar:
         ins = st.number_input(f"보험료 수정", value=safe_int(t_sal["insurance"]), step=1000)
         st.markdown(f"<span class='amt-label'>({ins:,}원)</span>", unsafe_allow_html=True)
         st.divider(); s_day = st.slider(f"시작일 설정", 1, 31, value=min(max(1, t_sal["start_day"]), 31))
-        
-        st.subheader("🔄 정산 방식 옵션")
-        app_gl = st.checkbox("현재 단가를 과거 기록에도 전체 적용", value=t_sal.get("apply_global", False), help="체크 시 리포터 조회 시마다 최신 단가로 재정산됩니다.")
-        
+        app_gl = st.checkbox("현재 단가를 과거 기록에도 전체 적용", value=t_sal.get("apply_global", False))
         if st.button(f"💿 {target} 설정 저장", use_container_width=True): 
             save_staff_salary_config(target, base, s_day, ins, new_n, new_p, ov_r, app_gl)
             st.session_state.admin_log = f"✅ {target} 저장 완료 ({get_now_kst().strftime('%H:%M:%S')})"; st.rerun()
@@ -258,6 +276,22 @@ st.markdown(f'<div class="version-tag">{SW_VERSION}</div>', unsafe_allow_html=Tr
 df_all = load_data_from_gsheet(user_name)
 st.write(f"### 💼 {user_name}님 실적")
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed"); str_date = sel_date.strftime("%Y-%m-%d")
+
+# [v4.0.0] 날짜 변경 시 모든 입력값 초기화 로직
+if "current_date" not in st.session_state: st.session_state.current_date = str_date
+if st.session_state.current_date != str_date:
+    st.session_state.current_date = str_date
+    ext_data = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
+    # 인센티브 초기화
+    st.session_state.inc_sum = safe_int(ext_data.iloc[0]["인센티브"]) if not ext_data.empty else 0
+    st.session_state.inc_his = [{"val": safe_int(ext_data.iloc[0]["인센티브"])}] if not ext_data.empty and safe_int(ext_data.iloc[0]["인센티브"]) > 0 else []
+    # 품목 수량 초기화
+    for i in range(7):
+        key = f"it_field_{i}" # input widget key와는 다름, 위젯에서 사용할 기본값 제어용
+        val = safe_int(ext_data.iloc[0][f"item{i+1}"]) if not ext_data.empty else 0
+        st.session_state[key] = val
+    st.rerun()
+
 existing = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
 if not existing.empty: st.markdown(f'<div class="status-card status-saved">✅ {str_date} 데이터가 저장되어 있습니다</div>', unsafe_allow_html=True)
 else: st.markdown(f'<div class="status-card status-missing">⚠️ {str_date} 데이터가 아직 등록되지 않았습니다</div>', unsafe_allow_html=True)
@@ -274,22 +308,20 @@ for i in range(6, -1, -1):
     w_box += f'<div style="text-align:center;"><div style="font-size:10px;">{td.day}일</div><div>{icon}</div></div>'
 st.markdown(w_box + '</div>', unsafe_allow_html=True); st.divider()
 
+# 수당 및 인센티브
 st.markdown('<div class="section-header">💰 수당 및 인센티브</div>', unsafe_allow_html=True)
-if "inc_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
+if "inc_sum" not in st.session_state:
     st.session_state.inc_sum = safe_int(existing.iloc[0]["인센티브"]) if not existing.empty else 0
     st.session_state.inc_his = [{"val": safe_int(existing.iloc[0]["인센티브"])}] if not existing.empty and safe_int(existing.iloc[0]["인센티브"]) > 0 else []
-    st.session_state.last_date = str_date
 
 ov_pay, sel_etime = 0, "20:00"
 if is_ov_staff:
     etime_list = [f"{h}:{m:02d}" for h in range(20, 24) for m in range(0, 60, 10)] + ["24:00"]
     e_val = existing.iloc[0]["퇴근시간"] if not existing.empty else "20:00"
     e_idx = etime_list.index(e_val) if e_val in etime_list else 0
-    
-    sel_etime = st.selectbox("퇴근 시간 선택", options=etime_list, index=e_idx, key="etime_sel")
+    sel_etime = st.selectbox("퇴근 시간 선택", options=etime_list, index=e_idx)
     h, m = map(int, sel_etime.split(":")) if sel_etime != "24:00" else (24, 0)
     ov_min = max(0, (h * 60 + m) - 1200); ov_pay = (ov_min // 10) * sal_cfg["overtime_rate"]
-    
     st.markdown(f"<div style='background:#f0f8ff; padding:12px; border-radius:12px; border:2px solid #d0e8ff; margin-bottom:15px; text-align:center;'>현재 시간수당: <b style='color:#007bff; font-size:20px;'>{ov_pay:,}원</b></div>", unsafe_allow_html=True)
     st.metric("인센티브 합계", f"{st.session_state.inc_sum:,}원")
 else: st.metric("인센티브 합계", f"{st.session_state.inc_sum:,}원")
@@ -299,33 +331,50 @@ if st.session_state.inc_his:
     for i, item in enumerate(st.session_state.inc_his): h_html += f'<span class="inc-item">#{i+1}: {item["val"]:,}원</span>'
     st.markdown(h_html + '</div>', unsafe_allow_html=True)
 
-add_amt = st.number_input("인센 추가 금액", 0, step=1000, value=0, label_visibility="collapsed")
+# [v4.0.0] 인센티브 입력값 혼동 방지 로직
+add_amt = st.number_input("인센티브 추가 금액 (입력 후 추가 버튼 클릭)", 0, step=1000, value=0, label_visibility="collapsed", key="inc_input_field")
 with st.container(key="incen_buttons"):
     b1, b2, b3 = st.columns(3)
-    b1.button("➕추가", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": st.session_state.inc_sum + add_amt}), st.session_state.inc_his.append({"val": add_amt})))
+    # on_click 콜백에서 상태 변경을 확실히 처리
+    def add_inc():
+        val = st.session_state.inc_input_field
+        if val > 0:
+            st.session_state.inc_sum += val
+            st.session_state.inc_his.append({"val": val})
+            st.session_state.inc_input_field = 0 # 입력필드 초기화
+    
+    b1.button("➕추가", use_container_width=True, on_click=add_inc)
     b2.button("↩️취소", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": st.session_state.inc_sum - (st.session_state.inc_his.pop()['val'] if st.session_state.inc_his else 0)})))
     b3.button("🧹리셋", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": 0, "inc_his": []})))
 
+# 품목 수량 입력
 st.markdown('<div class="section-header">📦 품목 수량 입력</div>', unsafe_allow_html=True)
 cts, it_n, it_p = [], sal_cfg["item_names"], sal_cfg["item_prices"]
+for i in range(7):
+    s_key = f"it_field_{i}"
+    if s_key not in st.session_state:
+        st.session_state[s_key] = safe_int(existing.iloc[0][f"item{i+1}"]) if not existing.empty else 0
+
 for i in range(0, 6, 2):
     c1, c2 = st.columns(2)
-    with c1: cts.append(st.number_input(it_n[i], 0, value=safe_int(existing.iloc[0][f'item{i+1}']) if not existing.empty else 0, key=f"it_{i}"))
-    with c2: cts.append(st.number_input(it_n[i+1], 0, value=safe_int(existing.iloc[0][f'item{i+2}']) if not existing.empty else 0, key=f"it_{i+1}"))
-cts.append(st.number_input(it_n[6], 0, value=safe_int(existing.iloc[0]['item7']) if not existing.empty else 0, key="it_6"))
+    with c1: cts.append(st.number_input(it_n[i], 0, key=f"it_input_{i}", value=st.session_state[f"it_field_{i}"]))
+    with c2: cts.append(st.number_input(it_n[i+1], 0, key=f"it_input_{i+1}", value=st.session_state[f"it_field_{i+1}"]))
+cts.append(st.number_input(it_n[6], 0, key="it_input_6", value=st.session_state["it_field_6"]))
 
 if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
+    # 세션 상태도 최신 위젯 값으로 동기화
+    for i in range(7): st.session_state[f"it_field_{i}"] = cts[i]
     tot_val = st.session_state.inc_sum + ov_pay + sum([safe_int(c) * safe_int(p) for c, p in zip(cts, it_p)])
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "시간수당": ov_pay, "퇴근시간": sel_etime, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": tot_val, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row):
-        st.session_state.save_success_show = f"✅ 데이터가 성공적으로 저장되었습니다! ({get_now_kst().strftime('%H:%M:%S')})"
+        st.session_state.sv_msg = f"✅ 데이터가 성공적으로 저장되었습니다! ({get_now_kst().strftime('%H:%M:%S')})"
         st.rerun()
 
-if st.session_state.get("save_success_show"):
-    st.markdown(f'<div class="save-success">{st.session_state.save_success_show}</div>', unsafe_allow_html=True)
-    st.session_state.save_success_show = None
+if st.session_state.get("sv_msg"):
+    st.markdown(f'<div class="save-success">{st.session_state.sv_msg}</div>', unsafe_allow_html=True)
+    st.session_state.sv_msg = None
 
-# --- 정산 리포트 ---
+# 정산 리포트
 st.divider()
 s_d, b, ins = safe_int(sal_cfg['start_day'], 13), safe_int(sal_cfg['base_salary']), safe_int(sal_cfg['insurance'])
 if sel_date.day >= s_d: s_dt = get_safe_date(sel_date.year, sel_date.month, s_d)
@@ -337,7 +386,6 @@ if not df_all.empty:
     df_all['date_dt'] = pd.to_datetime(df_all['날짜']).dt.date
     p_df = df_all[(df_all['date_dt'] >= s_dt) & (df_all['date_dt'] <= e_dt)].sort_values("날짜")
     if not p_df.empty:
-        # [v3.9.1] 소급 적용 로직: 현재 단가 it_p 를 사용하여 강제 재계산
         if sal_cfg.get("apply_global"):
             t_inc = safe_int(p_df["인센티브"].sum())
             t_ov = safe_int(p_df["시간수당"].sum())
@@ -351,17 +399,7 @@ if not df_all.empty:
         
         final_pay = int(b + total_sum_val - ins)
         combined_inc = t_inc + t_items + t_ov
-        
-        st.markdown(f"""
-        <div class="calc-detail">
-            <div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div>
-            <div class="calc-line"><span>인센티브</span> <span>+ {combined_inc:,}원</span></div>
-            <div class="calc-line"><span>보험료</span> <span>- {ins:,}원</span></div>
-            <div class="calc-total">
-                <div class="calc-line"><span>💰 총급여</span> <span>{final_pay:,}원</span></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="calc-detail"><div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div><div class="calc-line"><span>인센티브</span> <span>+ {combined_inc:,}원</span></div><div class="calc-line"><span>보험료</span> <span>- {ins:,}원</span></div><div class="calc-total"><div class="calc-line"><span>💰 총급여</span> <span>{final_pay:,}원</span></div></div></div>', unsafe_allow_html=True)
 
         h_base = ["날짜", "인센"] + (["수당"] if is_ov_staff else [])
         hds = h_base + [n[:2] for n in it_n] + ["합계"]
@@ -372,15 +410,11 @@ if not df_all.empty:
             else:
                 row_inc, row_ov = safe_int(r['인센티브']), safe_int(r.get('시간수당', 0))
                 for i in range(1, 8): i_sums[i-1] += safe_int(r[f'item{i}'])
-                if sal_cfg.get("apply_global"):
-                    row_total = row_inc + row_ov + sum([safe_int(r[f'item{i+1}']) * safe_int(it_p[i]) for i in range(7)])
-                else: row_total = safe_int(r['합계'])
-                
+                row_total = (row_inc + row_ov + sum([safe_int(r[f'item{i+1}']) * safe_int(it_p[i]) for i in range(7)])) if sal_cfg.get("apply_global") else safe_int(r['합계'])
                 disp_inc = row_inc if is_ov_staff else row_inc + row_ov
                 ov_td = f"<td>{row_ov:,}</td>" if is_ov_staff else ""
                 it_tds = "".join([f"<td>{safe_int(r[f'item{i}'])}</td>" for i in range(1, 8)])
                 r_html += f"<tr><td style='font-weight:bold;'>{md}</td><td>{disp_inc:,}</td>{ov_td}{it_tds}<td style='color:blue;'>{row_total:,}</td></tr>"
         
-        sum_inc_total = t_inc if is_ov_staff else t_inc + t_ov
-        r_html += f"<tr class='total-row'><td>합계</td><td>{sum_inc_total:,}</td>" + (f"<td>{t_ov:,}</td>" if is_ov_staff else "") + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{total_sum_val:,}</td></tr>"
+        r_html += f"<tr class='total-row'><td>합계</td><td>{(t_inc if is_ov_staff else t_inc + t_ov):,}</td>" + (f"<td>{t_ov:,}</td>" if is_ov_staff else "") + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{total_sum_val:,}</td></tr>"
         st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{x}</th>" for x in hds])}</tr>{r_html}</table>', unsafe_allow_html=True)
