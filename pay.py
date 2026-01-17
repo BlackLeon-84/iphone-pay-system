@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 import calendar
 
 # 소프트웨어 버전
-SW_VERSION = "v3.4.4"
+SW_VERSION = "v3.4.5"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -53,12 +53,9 @@ def get_spreadsheet():
 def get_config_worksheet():
     ss = get_spreadsheet()
     headers = ["직원명", "기본급", "정산일", "보험료"] + [f"item{i}_name" for i in range(1,8)] + [f"item{i}_price" for i in range(1,8)]
-    
-    # 시트 목록을 확인하여 중복 생성 방지
     ws_list = [sh.title for sh in ss.worksheets()]
     if "config" in ws_list:
         ws = ss.worksheet("config")
-        # 헤더 점검 및 교정 (비어있거나 틀리면 덮어씀)
         curr = ws.row_values(1)
         if not curr or curr[0] != "직원명": ws.update(range_name="A1:R1", values=[headers])
     else:
@@ -69,14 +66,13 @@ def get_config_worksheet():
 def get_dynamic_staff_list():
     try:
         sheet = get_config_worksheet()
-        names = sheet.col_values(1)[1:] # 첫 행 제외
+        names = sheet.col_values(1)[1:]
         return sorted(list(set(BASE_STAFF + [n for n in names if n])))
     except: return BASE_STAFF
 
 def load_staff_salary_config(name):
     sheet = get_config_worksheet()
     rows = sheet.get_all_values()
-    
     defaults = {"base_salary": 3500000, "start_day": 13, "insurance": 104760, 
                 "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
                 "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]}
@@ -94,8 +90,6 @@ def load_staff_salary_config(name):
                     "item_prices": [int(d.get(f"item{i}_price", defaults["item_prices"][i-1])) if d.get(f"item{i}_price") else defaults["item_prices"][i-1] for i in range(1,8)]
                 }
                 return res
-    
-    # 없으면 새로 저장
     save_staff_salary_config(name, defaults["base_salary"], defaults["start_day"], defaults["insurance"], defaults["item_names"], defaults["item_prices"])
     return defaults
 
@@ -105,13 +99,11 @@ def save_staff_salary_config(name, base, day, ins, names, prices):
     idx = -1
     for i, r in enumerate(rows):
         if r and r[0] == name: idx = i + 1; break
-    
     data = [name, int(base), int(day), int(ins)] + names + prices
     if idx != -1:
         col = chr(ord('A') + len(data) - 1)
         sheet.update(range_name=f"A{idx}:{col}{idx}", values=[data])
-    else:
-        sheet.append_row(data)
+    else: sheet.append_row(data)
 
 def get_user_worksheet(user_name):
     ss = get_spreadsheet()
@@ -169,11 +161,10 @@ if not st.session_state.logged_in:
             st.session_state.user_name = user_id
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 업데이트</b><br>• 구글 시트 중복 생성 방지 로직 적용<br>• 직원별 개별 설정 및 데이터 자동 분리<br>• 시트 헤더 자동 교정 기능 추가</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 업데이트</b><br>• 변수명 불일치 수정 (NameError 해결)<br>• 구글 시트 중복 생성 방지<br>• 직원별 개별 설정 기능</div>', unsafe_allow_html=True)
     st.stop()
 
-user_name = st.session_state.user_name
-sal_cfg = st.session_state.salary_cfg
+user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
 
 with st.sidebar:
     st.header("⚙️ 설정")
@@ -193,7 +184,6 @@ with st.sidebar:
         ins = st.number_input("보험료", value=t_sal["insurance"])
         if st.button(f"💿 {target} 설정 저장", use_container_width=True):
             save_staff_salary_config(target, base, s_day, ins, new_n, new_p)
-            get_user_worksheet(target)
             if target == user_name: st.session_state.salary_cfg = load_staff_salary_config(user_name)
             st.session_state.admin_log = f"✅ {target} 저장 완료 ({get_now_kst().strftime('%H:%M:%S')})"
             st.rerun()
@@ -252,12 +242,12 @@ it_n, it_p = sal_cfg["item_names"], sal_cfg["item_prices"]
 for i in range(0, 6, 2):
     c1, c2 = st.columns(2)
     with c1: cts.append(st.number_input(it_n[i], 0, value=int(existing.iloc[0][f'item{i+1}']) if is_edit else 0, key=f"it_{i}"))
-    with c2: cts.append(st.number_input(it_n[i+1], 0, value=int(existing_row.iloc[0][f'item{i+2}']) if is_edit else 0, key=f"it_{i+1}"))
+    with c2: cts.append(st.number_input(it_n[i+1], 0, value=int(existing.iloc[0][f'item{i+2}']) if is_edit else 0, key=f"it_{i+1}"))
 cts.append(st.number_input(it_n[6], 0, value=int(existing.iloc[0]['item7']) if is_edit else 0, key="it_6"))
 
 if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
-    total = sum([int(c) * int(p) for c, p in zip(cts, it_p)])
-    row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": st.session_state.inc_sum + total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
+    total_val = sum([int(c) * int(p) for c, p in zip(cts, it_p)])
+    row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": st.session_state.inc_sum + total_val, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success("저장 완료!"); st.rerun()
 
 st.divider()
