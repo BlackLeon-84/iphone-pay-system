@@ -312,8 +312,8 @@ def render_monthly_report(df_all, target_date, sal_cfg, is_ov_staff, user_name, 
         s_dt = date(prev_y, prev_m, s_d)
         e_dt = date(year, month, s_d) - timedelta(days=1)
 
-    if not readonly:
-        st.markdown(f":grey_exclamation: **정산 기간:** {s_dt.month}월 {s_dt.day}일 ~ {e_dt.month}월 {e_dt.day}일")
+    # [Fix] 항상 기간 표시 (User Request: "일일 입력 하단 리포트에 기간도 동일하게 넣어줘")
+    st.markdown(f":grey_exclamation: **정산 기간:** {s_dt.month}월 {s_dt.day}일 ~ {e_dt.month}월 {e_dt.day}일")
 
     # 2. 데이터 필터링
     if df_all.empty:
@@ -606,7 +606,8 @@ with tab_daily:
             st_dt = get_safe_date(y, m, safe_int(sal_cfg['start_day'], 13))
         
         ed_dt = get_safe_date((st_dt + timedelta(days=33)).year, (st_dt + timedelta(days=33)).month, safe_int(sal_cfg['start_day'], 13)) - timedelta(days=1)
-        lbl_m = ed_dt.strftime("%Y년 %m월")
+        # [Fix] 13일~12일 -> 2월 월급 명시
+        lbl_m = ed_dt.strftime("%Y년 %m월 (월급)") 
         d_m_opts.append(lbl_m)
         d_m_ranges.append((st_dt, ed_dt))
 
@@ -654,14 +655,15 @@ with tab_report:
             st_dt = get_safe_date(y, m, s_d)
         
         ed_dt = get_safe_date((st_dt + timedelta(days=33)).year, (st_dt + timedelta(days=33)).month, s_d) - timedelta(days=1)
-        lbl_m = ed_dt.strftime("%Y년 %m월")
+        # [Fix] 13일~12일 -> 2월 월급 명시
+        lbl_m = ed_dt.strftime("%Y년 %m월 (월급)")
         m_opts.append(lbl_m)
         m_ranges.append((st_dt, ed_dt))
 
     st.subheader("🗓️ 정산 월 선택")
     sel_idx = st.selectbox("리포트 기간", range(len(m_opts)), format_func=lambda x: m_opts[x])
     s_dt, e_dt = m_ranges[sel_idx]
-    st.markdown(f":grey_exclamation: **정산 기간:** {s_dt.month}월 {s_dt.day}일 ~ {e_dt.month}월 {e_dt.day}일")
+    # [Fix] Duplicate period display removed (Handled by render_monthly_report)
 
     # 월 공제 항목 입력 기능 (카드 상세 포함)
     with st.expander("💳 공제 항목 입력 (매장현금, 카드상세, 기타)", expanded=True):
