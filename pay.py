@@ -430,10 +430,37 @@ if st.session_state.get("sv_msg"):
 # --- 정산 리포트 ---
 st.divider()
 s_d, b, ins = safe_int(sal_cfg['start_day'], 13), safe_int(sal_cfg['base_salary']), safe_int(sal_cfg['insurance'])
-if sel_date.day >= s_d: s_dt = get_safe_date(sel_date.year, sel_date.month, s_d)
-else: prv = sel_date.replace(day=1) - timedelta(days=1); s_dt = get_safe_date(prv.year, prv.month, s_d)
-e_dt = get_safe_date((s_dt + timedelta(days=32)).year, (s_dt + timedelta(days=32)).month, s_d) - timedelta(days=1)
-st.subheader(f"📊 정산 리포트 ({s_dt.strftime('%m/%d')} ~ {e_dt.strftime('%m/%d')})")
+
+# 월별 옵션 생성 (최근 12개월)
+m_opts, m_ranges = [], []
+curr = get_now_kst().date()
+
+# 이번달 정산 시작일 계산
+if curr.day >= s_d: t_st = date(curr.year, curr.month, s_d)
+else:
+    prv = curr.replace(day=1) - timedelta(days=1)
+    t_st = get_safe_date(prv.year, prv.month, s_d)
+
+for i in range(12):
+    st_dt = get_safe_date((t_st - timedelta(days=32*i)).year, (t_st - timedelta(days=32*i)).month, s_d)
+    # 이전달 계산 시 년/월 보정 로직 보완
+    if i > 0:
+        nxt_m = t_st.replace(day=1) - timedelta(days=1)
+        # 매월 1일에서 하루 빼서 전달로 간 뒤, start_day 적용
+        # 정확한 logic: t_st에서 한달씩 뒤로 가야함 using relativedelta logic roughly
+        y, m = t_st.year, t_st.month - i
+        while m < 1: y -= 1; m += 12
+        st_dt = get_safe_date(y, m, s_d)
+    
+    ed_dt = get_safe_date((st_dt + timedelta(days=33)).year, (st_dt + timedelta(days=33)).month, s_d) - timedelta(days=1)
+    # label format: 2025-02 (01/13 ~ 02/12)
+    lbl_m = ed_dt.strftime("%Y-%m")
+    m_opts.append(f"{lbl_m} ({st_dt.strftime('%m/%d')} ~ {ed_dt.strftime('%m/%d')})")
+    m_ranges.append((st_dt, ed_dt))
+
+st.subheader("📊 정산 리포트 조회")
+sel_idx = st.selectbox("정산 월 선택", range(len(m_opts)), format_func=lambda x: m_opts[x])
+s_dt, e_dt = m_ranges[sel_idx]
 
 if not df_all.empty:
     df_all['date_dt'] = pd.to_datetime(df_all['날짜']).dt.date
