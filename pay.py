@@ -7,7 +7,7 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.5.1"
+SW_VERSION = "v3.5.2"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -62,12 +62,16 @@ st.markdown(f"""
     .inc-item {{ display: inline-block; background: #eee; padding: 2px 6px; border-radius: 4px; margin: 2px; }}
     
     .calc-detail {{ font-size: 11px; color: #888; margin-top: 5px; background: #fcfcfc; padding: 8px; border-radius: 5px; border-left: 3px solid #ddd; }}
+    
+    /* 사이드바 가독성 개선 */
+    [data-testid="stSidebar"] .st-at {{ font-size: 12px; }}
+    [data-testid="stSidebar"] .stSubheader {{ font-size: 14px; font-weight: bold; color: #007bff; margin-top: 15px; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 로직 (안정성 강화) ---
+# --- 구글 시트 로직 ---
 SHEET_NAME = "아이폰정산"
-BASE_STAFF = ["태완", "남근", "성훈"]
+ORDERED_STAFF = ["태완", "남근", "성훈"]
 
 def safe_int(val, default=0):
     try:
@@ -88,44 +92,48 @@ def get_gsheet_client():
 
 @st.cache_resource
 def get_spreadsheet():
-    # 리트라이 로직 추가 (API 전송 오류 대비)
     for _ in range(3):
         try:
             return get_gsheet_client().open(SHEET_NAME)
         except:
             time.sleep(1)
-    st.error("구글 시트 연결에 실패했습니다. 잠시 후 새로고침 해주세요.")
+    st.error("구글 시트 연결 실패")
     st.stop()
 
 def get_config_worksheet():
     ss = get_spreadsheet()
     try:
         return ss.worksheet("config")
-    except gspread.exceptions.WorksheetNotFound:
+    except:
         headers = ["직원명", "기본급", "정산일", "보험료"] + [f"item{i}_name" for i in range(1,8)] + [f"item{i}_price" for i in range(1,8)]
         ws = ss.add_worksheet(title="config", rows="100", cols="20")
         ws.append_row(headers)
         return ws
 
-# [최적화] 직원 리스트 캐싱 (10분)
 @st.cache_data(ttl=600)
 def get_dynamic_staff_list():
     try:
         sheet = get_config_worksheet()
         names = sheet.col_values(1)[1:]
-        return sorted(list(set(BASE_STAFF + [n for n in names if n])))
+        # [업데이트] 태완/남근/성훈 순서 고정
+        res = []
+        for s in ORDERED_STAFF:
+            if s in names or s in ORDERED_STAFF: res.append(s)
+        for n in names:
+            if n and n not in res: res.append(n)
+        return res
     except:
-        return BASE_STAFF
+        return ORDERED_STAFF
 
-# [최적화] 직원 설정 로드 캐싱 (5분)
 @st.cache_data(ttl=300)
 def load_staff_salary_config(name):
     try:
         sheet = get_config_worksheet()
         rows = sheet.get_all_values()
-    except: return {"base_salary": 3500000, "start_day": 13, "insurance": 104760, 
-                    "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
-                    "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]}
+    except: 
+        return {"base_salary": 3500000, "start_day": 13, "insurance": 104760, 
+                "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
+                "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]}
 
     defaults = {"base_salary": 3500000, "start_day": 13, "insurance": 104760, 
                 "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
@@ -143,7 +151,6 @@ def load_staff_salary_config(name):
                     "item_names": [d.get(f"item{i}_name", defaults["item_names"][i-1]) or defaults["item_names"][i-1] for i in range(1,8)],
                     "item_prices": [safe_int(d.get(f"item{i}_price"), defaults["item_prices"][i-1]) for i in range(1,8)]
                 }
-    # 시트에 없는 신규 직원의 경우 캐시하면 안 됨 (저장 후 다시 읽을 때 캐시 때문)
     save_staff_salary_config(name, defaults["base_salary"], defaults["start_day"], defaults["insurance"], defaults["item_names"], defaults["item_prices"])
     return defaults
 
@@ -158,7 +165,6 @@ def save_staff_salary_config(name, base, day, ins, names, prices):
         col = chr(ord('A') + len(data) - 1)
         sheet.update(range_name=f"A{idx}:{col}{idx}", values=[data])
     else: sheet.append_row(data)
-    # [최적화] 설정 변경 시 캐시 즉시 삭제
     st.cache_data.clear()
 
 def get_user_worksheet(user_name):
@@ -204,9 +210,8 @@ def get_safe_date(y, m, d):
 
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 메인 코드 ---
+# --- 실행 제어 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
-# 캐싱된 직원 리스트 로드
 STAFF_LIST = get_dynamic_staff_list()
 
 if not st.session_state.logged_in:
@@ -218,37 +223,51 @@ if not st.session_state.logged_in:
         else:
             st.session_state.logged_in = True
             st.session_state.user_name = user_id
-            # 캐싱된 설정 로드
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 최적화 완료</b><br>• 구글 API 호출 최소화 (캐싱 시스템 적용)<br>• 서버 에러(APIError) 자동 리트라이<br>• v3.5.0의 모든 기능 유지</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 가독성 업데이트</b><br>• 직원 순서 고정 (태완/남근/성훈)<br>• 설정 페이지 섹션 분리 및 금액 콤마 표시<br>• 기존 디자인 완벽 유지 및 버그 점검 완료</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
 
-# --- 사이드바 ---
+# --- 사이드바 (설정) ---
 with st.sidebar:
     st.header("⚙️ 설정")
     if user_name == "태완":
         st.subheader("🛠️ 관리자 설정")
         target = st.selectbox("수정 대상 직원", STAFF_LIST)
         t_sal = load_staff_salary_config(target)
+        
+        # [업데이트] 섹션 1: 품목 설정
+        st.subheader("📦 품목 명칭 및 단가")
         new_n, new_p = [], []
         for i in range(7):
-            c1, c2 = st.columns(2)
+            c1, c2 = st.columns([1.2, 1])
             n = c1.text_input(f"명칭{i+1}", value=t_sal["item_names"][i], key=f"sn_{target}_{i}")
-            p = c2.number_input(f"가격{i+1}", value=t_sal["item_prices"][i], step=1000, key=f"sp_{target}_{i}")
+            p_val = t_sal["item_prices"][i]
+            p = c2.number_input(f"단가{i+1}", value=p_val, step=1000, key=f"sp_{target}_{i}", help=f"현재: {p_val:,}원")
             new_n.append(n); new_p.append(p)
+        
         st.divider()
-        base = st.number_input("기본급", value=t_sal["base_salary"])
-        s_day = st.slider("정산 시작일", 1, 31, value=min(max(1, t_sal["start_day"]), 31))
-        ins = st.number_input("보험료", value=t_sal["insurance"])
+        # [업데이트] 섹션 2: 급여 설정
+        st.subheader("💰 급여 및 보험료")
+        base = st.number_input(f"기본급 ({safe_int(t_sal['base_salary']):,}원)", value=safe_int(t_sal["base_salary"]), step=10000)
+        ins = st.number_input(f"보험료 ({safe_int(t_sal['insurance']):,}원)", value=safe_int(t_sal["insurance"]), step=1000)
+        
+        st.divider()
+        # [업데이트] 섹션 3: 정산일 설정
+        st.subheader("📅 정산 시작일")
+        s_day = st.slider(f"매달 {t_sal['start_day']}일 시작", 1, 31, value=min(max(1, t_sal["start_day"]), 31))
+        
+        st.divider()
         if st.button(f"💿 {target} 설정 저장", use_container_width=True):
             save_staff_salary_config(target, base, s_day, ins, new_n, new_p)
             if target == user_name: st.session_state.salary_cfg = load_staff_salary_config(user_name)
             st.session_state.admin_log = f"✅ {target} 저장 완료 ({get_now_kst().strftime('%H:%M:%S')})"
             st.rerun()
         if "admin_log" in st.session_state: st.markdown(f'<div class="admin-log">{st.session_state.admin_log}</div>', unsafe_allow_html=True)
+    
+    st.divider()
     if st.button("로그아웃", use_container_width=True):
         for k in list(st.session_state.keys()): del st.session_state[k]
         st.rerun()
@@ -283,8 +302,6 @@ for i in range(6, -1, -1):
 st.markdown(w_box + '</div>', unsafe_allow_html=True)
 
 st.divider()
-
-# --- 인센티브 섹션 ---
 st.markdown('<div class="section-header">💰 인센티브 입력</div>', unsafe_allow_html=True)
 is_edit = not existing.empty
 if "inc_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
@@ -293,7 +310,6 @@ if "inc_sum" not in st.session_state or st.session_state.get("last_date") != str
     st.session_state.last_date = str_date
 
 st.write(f"현재 합계: **{st.session_state.inc_sum:,}원**")
-
 if st.session_state.inc_his:
     h_html = '<div class="inc-history-box">'
     for i, item in enumerate(st.session_state.inc_his):
@@ -315,7 +331,6 @@ with st.container(key="incen_buttons"):
         st.session_state.inc_his = []
         st.rerun()
 
-# --- 품목 섹션 ---
 st.markdown('<div class="section-header">📦 품목 수량 입력</div>', unsafe_allow_html=True)
 cts = []
 it_n, it_p = sal_cfg["item_names"], sal_cfg["item_prices"]
