@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.0.4"
+SW_VERSION = "v3.0.5"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -49,7 +49,16 @@ st.markdown(f"""
         text-overflow: clip !important;
     }}
 
-    /* 4. 텍스트 및 테이블 스타일 */
+    /* 4. 로그인 입장 버튼 강조 */
+    .st-key-login_btn button {{
+        height: 50px !important;
+        font-size: 18px !important;
+        font-weight: bold !important;
+        background-color: #007bff !important;
+        color: white !important;
+    }}
+
+    /* 5. 텍스트 및 테이블 스타일 */
     input {{ font-size: 16px !important; }}
     label p {{ font-size: 12px !important; font-weight: bold !important; color: #444 !important; }}
     .weekly-box {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px; }}
@@ -58,8 +67,10 @@ st.markdown(f"""
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     .calc-detail {{ font-size: 11px; color: #888; margin-top: -5px; margin-bottom: 10px; }}
     .incen-log {{ font-size: 11px; color: #666; padding: 8px; background: #fcfcfc; border-radius: 5px; border-left: 3px solid #ddd; margin: 10px 0; }}
-    /* 저장 정보 로그 스타일 */
     .save-log {{ font-size: 12px; color: #1e88e5; font-weight: bold; margin-bottom: 5px; }}
+    
+    /* 버전 히스토리 스타일 */
+    .update-log {{ font-size: 11px; color: #777; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 30px; border: 1px solid #eee; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -116,11 +127,22 @@ if "config" not in st.session_state:
 if not st.session_state.logged_in:
     st.title("🔐 로그인")
     user_id = st.selectbox("직원 선택", options=STAFF_LIST)
-    # st.input을 st.text_input으로 수정함
     admin_pw = st.text_input("비번", type="password") if user_id == "태완" else ""
-    if st.button("입장"):
+    
+    if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
+    
+    # 하단 수정 내역 로그 추가
+    st.markdown(f"""
+        <div class="update-log">
+            <b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>
+            • 로그인 페이지 '입장' 버튼 크기 확대 및 디자인 강조<br>
+            • 날짜별 최종 저장 시간 로그 기능 복구<br>
+            • 아이폰 가로 정렬 버튼 레이아웃 최적화 (v3.0.0 기준)<br>
+            • 구글 시트 데이터 로딩 안정화
+        </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
 # --- 사이드바 ---
