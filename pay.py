@@ -81,7 +81,7 @@ st.markdown(f"""
 # --- 구글 시트 상수 ---
 SHEET_NAME = "아이폰정산"
 ORDERED_STAFF = ["태완", "남근", "성훈", "성욱"]
-USER_HEADER = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간", "시간수당", "퇴근시간"]
+USER_HEADER = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간", "시간수당", "퇴근시간", "현금"]
 
 def safe_int(val, default=0):
     try:
@@ -196,7 +196,7 @@ def load_data_from_gsheet(user_name):
         sheet = get_user_worksheet(user_name); data = sheet.get_all_values()
         if len(data) <= 1: return pd.DataFrame()
         df = pd.DataFrame(data[1:], columns=data[0])
-        num_cols = ["인센티브", "시간수당", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계"]
+        num_cols = ["인센티브", "시간수당", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "현금"]
         for c in num_cols:
             if c in df.columns: df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", ""), errors='coerce').fillna(0).astype(int)
         return df
@@ -207,7 +207,7 @@ def save_to_gsheet(user_name, df_row):
         sheet = get_user_worksheet(user_name); rows = sheet.get_all_values(); idx = -1
         for i, r in enumerate(rows):
             if len(r) > 1 and r[1] == df_row['날짜']: idx = i + 1; break
-        vals = [format_curr(df_row.get(h, 0)) if h in ["인센티브", "시간수당", "합계"] or "item" in h else df_row.get(h, "") for h in USER_HEADER]
+        vals = [format_curr(df_row.get(h, 0)) if h in ["인센티브", "시간수당", "합계", "현금"] or "item" in h else df_row.get(h, "") for h in USER_HEADER]
         if idx != -1: sheet.update(range_name=f"A{idx}:{chr(ord('A')+len(USER_HEADER)-1)}{idx}", values=[vals])
         else: sheet.append_row(vals)
         return True
@@ -448,6 +448,11 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
             remark_base += " | " + "+".join(valid_vals)
             
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "시간수당": ov_pay, "퇴근시간": sel_etime, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": tot_val, "비고": remark_base, "입력시간": get_now_kst().strftime("%H:%M:%S")}
+    
+    # 기존 현금 데이터 유지 (덮어쓰기 방지)
+    if "현금" in existing.columns and not existing.empty:
+         row["현금"] = safe_int(existing.iloc[0]["현금"])
+         
     if save_to_gsheet(user_name, row):
         st.session_state.sv_msg = f"✅ 데이터가 성공적으로 저장되었습니다! ({get_now_kst().strftime('%H:%M:%S')})"
         st.rerun()
@@ -492,6 +497,21 @@ sel_idx = st.selectbox("정산 월 선택", range(len(m_opts)), format_func=lamb
 s_dt, e_dt = m_ranges[sel_idx]
 st.markdown(f":grey_exclamation: **정산 기간:** {s_dt.month}월 {s_dt.day}일 ~ {e_dt.month}월 {e_dt.day}일")
 
+# 현금 수령액 입력 (보고서용)
+with st.expander("💵 현금 수령액 입력 (이달에 미리 받아간 현금)"):
+    # 마지막 날짜(ed_dt)의 현금 데이터 조회
+    ed_str = e_dt.strftime("%Y-%m-%d")
+    last_row = df_all[df_all["날짜"] == ed_str] if not df_all.empty else pd.DataFrame()
+    cur_cash = safe_int(last_row.iloc[0]["현금"]) if not last_row.empty and "현금" in last_row.columns else 0
+    
+    new_cash = st.number_input(f"{ed_str} 기준 현금 수령액", value=cur_cash, step=10000)
+    if st.button("현금 내역 저장"):
+        # 마지막 날짜 행이 없으면 생성, 있으면 업데이트
+        tgt_row = last_row.iloc[0].to_dict() if not last_row.empty else {"직원명": user_name, "날짜": ed_str, "입력시간": get_now_kst().strftime("%H:%M:%S")}
+        tgt_row["현금"] = new_cash
+        if save_to_gsheet(user_name, tgt_row):
+            st.success("현금 내역 저장 완료! 리포트가 갱신됩니다."); time.sleep(1); st.rerun()
+
 if not df_all.empty:
     df_all['date_dt'] = pd.to_datetime(df_all['날짜']).dt.date
     p_df = df_all[(df_all['date_dt'] >= s_dt) & (df_all['date_dt'] <= e_dt)].sort_values("날짜")
@@ -501,10 +521,25 @@ if not df_all.empty:
             t_ov = safe_int(p_df["시간수당"].sum())
             t_items = sum([safe_int(p_df[f"item{i+1}"].sum()) * safe_int(it_p[i]) for i in range(7)])
             total_sum_val = t_inc + t_ov + t_items
+            t_cash = safe_int(p_df["현금"].sum()) if "현금" in p_df.columns else 0
         else:
             total_sum_val = safe_int(p_df["합계"].sum()); t_inc = safe_int(p_df["인센티브"].sum()); t_ov = safe_int(p_df["시간수당"].sum()); t_items = total_sum_val - t_inc - t_ov
-        final_pay = int(b + total_sum_val - ins); combined_inc = t_inc + t_items + t_ov
-        st.markdown(f'<div class="calc-detail"><div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div><div class="calc-line"><span>인센티브</span> <span>+ {combined_inc:,}원</span></div><div class="calc-line"><span>보험료</span> <span>- {ins:,}원</span></div><div class="calc-total"><div class="calc-line"><span>💰 총급여</span> <span>{final_pay:,}원</span></div></div></div>', unsafe_allow_html=True)
+            t_cash = safe_int(p_df["현금"].sum()) if "현금" in p_df.columns else 0
+            
+        final_pay = int(b + total_sum_val - ins - t_cash); combined_inc = t_inc + t_items + t_ov
+        
+        # 리포트 요약 카드
+        st.markdown(f'''
+        <div class="calc-detail">
+            <div class="calc-line"><span>기본급</span> <span>+ {b:,}원</span></div>
+            <div class="calc-line"><span>인센티브 (시간수당 포함)</span> <span>+ {combined_inc:,}원</span></div>
+            <div class="calc-line" style="color:red;"><span>보험료</span> <span>- {ins:,}원</span></div>
+            {f'<div class="calc-line" style="color:#ef6c00;"><span>현금 수령 (가불/선지급)</span> <span>- {t_cash:,}원</span></div>' if t_cash > 0 else ''}
+            <div class="calc-total">
+                <div class="calc-line"><span>💰 실 수령액</span> <span>{final_pay:,}원</span></div>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
         h_base = ["날짜", "인센"] + (["수당"] if is_ov_staff else []); hds = h_base + [n[:2] for n in it_n] + ["합계"]
         r_html, i_sums = "", [0]*7
         for _, r in p_df.iterrows():
