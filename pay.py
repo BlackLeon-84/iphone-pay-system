@@ -5,21 +5,21 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.1.4"
+SW_VERSION = "v3.1.5"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [v3.0.0 디자인 100% 복구] CSS ---
+# --- [v3.0.0 디자인 및 버튼 레이아웃 완전 복구] ---
 st.markdown(f"""
     <style>
     .block-container {{ padding-top: 3.5rem !important; max-width: 450px !important; padding-left: 10px !important; padding-right: 10px !important; }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
     
-    /* v3.0.0 인센티브 버튼 가로 배열 복구 */
+    /* 인센티브 가로 버튼 3분할 고정 (v3.0.0 원본 CSS) */
     .st-key-incen_buttons [data-testid="column"] {{
-        width: 33% !important;
-        flex: 1 1 33% !important;
+        width: calc(33.33% - 5px) !important;
+        flex: 1 1 calc(33.33% - 5px) !important;
         min-width: 0 !important;
     }}
     .st-key-incen_buttons button {{
@@ -29,16 +29,22 @@ st.markdown(f"""
         min-height: 45px !important;
     }}
 
+    /* 강조 및 테이블 스타일 */
     .total-salary {{ font-size: 20px !important; color: #007bff !important; font-weight: 800 !important; }}
     .period-text {{ font-size: 13px; color: #666; font-weight: bold; margin-bottom: 10px; }}
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
     .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     .save-log {{ font-size: 12px; color: #1e88e5; font-weight: bold; margin-bottom: 5px; }}
+    
+    /* 관리자 설정 로그 스타일 */
+    .config-log {{ font-size: 11px; color: #28a745; background: #f0fff4; padding: 8px; border-radius: 5px; margin-top: 10px; border: 1px solid #c6f6d5; }}
+    /* 업데이트 로그 박스 복구 */
+    .update-log {{ font-size: 11px; color: #777; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 30px; border: 1px solid #eee; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 연결 ---
+# --- 구글 시트 및 유틸리티 ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
@@ -82,7 +88,7 @@ def save_to_gsheet(user_name, df_row):
 
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 초기 세션 ---
+# --- 초기 설정 ---
 STAFF_LIST = ["태완", "남근", "성훈"]
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "config_dict" not in st.session_state:
@@ -91,8 +97,9 @@ if "config_dict" not in st.session_state:
         "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
         "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]
     } for name in STAFF_LIST}
+if "admin_log" not in st.session_state: st.session_state.admin_log = []
 
-# --- [v3.0.0 복구] 로그인 화면 ---
+# --- 로그인 및 업데이트 로그 복구 ---
 if not st.session_state.logged_in:
     st.title("아이폰정산 로그인")
     user_id = st.selectbox("직원 선택", options=STAFF_LIST)
@@ -100,15 +107,25 @@ if not st.session_state.logged_in:
     if st.button("입장", use_container_width=True):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
+    
+    st.markdown(f"""
+        <div class="update-log">
+            <b>🚀 시스템 업데이트 로그 ({get_now_kst().strftime("%Y-%m-%d")})</b><br>
+            • <b>원본 디자인 복구</b>: 로그인 창 및 버튼 레이아웃 v3.0.0으로 완전 복구<br>
+            • <b>관리자 로그 추가</b>: 설정창 하단에 변경 이력 실시간 기록<br>
+            • <b>리포트 날짜 표기</b>: 정산 주기에 따른 기간 정보를 리포트에 명시
+        </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
-# --- 메인 본문 ---
+# --- 메인 페이지 로직 ---
 user_name = st.session_state.user_name
 cfg = st.session_state.config_dict[user_name]
 
 with st.sidebar:
     st.header("⚙️ 설정")
     if user_name == "태완":
+        st.subheader("🛠️ 관리자 설정")
         target_staff = st.selectbox("수정 대상", STAFF_LIST)
         t_cfg = st.session_state.config_dict[target_staff]
         new_names = []; new_prices = []
@@ -122,7 +139,15 @@ with st.sidebar:
         ins = st.number_input("보험료", value=int(t_cfg["insurance"]), step=10, format="%d")
         if st.button("💿 설정 저장", use_container_width=True):
             st.session_state.config_dict[target_staff].update({"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices})
+            log_entry = f"{get_now_kst().strftime('%m-%d %H:%M')} | {target_staff} 설정 저장됨"
+            st.session_state.admin_log.insert(0, log_entry)
             st.success("저장 완료"); st.rerun()
+        
+        if st.session_state.admin_log:
+            st.markdown("**📝 최근 설정 변경 로그**")
+            log_display = "<br>".join(st.session_state.admin_log[:3])
+            st.markdown(f'<div class="config-log">{log_display}</div>', unsafe_allow_html=True)
+            
     if st.button("로그아웃"): st.session_state.logged_in = False; st.rerun()
 
 st.markdown(f'<div class="version-tag">{SW_VERSION}</div>', unsafe_allow_html=True)
@@ -171,7 +196,7 @@ for i in range(0, 6, 2):
     with c2: counts.append(st.number_input(cfg["item_names"][i+1], 0, value=int(existing_row.iloc[0][f'item{i+2}']) if is_edit else 0, key=f"it_{i+1}"))
 counts.append(st.number_input(cfg["item_names"][6], 0, value=int(existing_row.iloc[0]['item7']) if is_edit else 0, key="it_6"))
 
-if st.button("✅ 데이터 최종 저장", type="primary", use_container_width=True):
+if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
     item_total = sum([int(c) * int(p) for c, p in zip(counts, cfg["item_prices"])])
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.incen_sum, "item1": counts[0], "item2": counts[1], "item3": counts[2], "item4": counts[3], "item5": counts[4], "item6": counts[5], "item7": counts[6], "합계": st.session_state.incen_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success(f"{str_date} 저장 성공"); st.rerun()
@@ -182,7 +207,7 @@ st.subheader("📊 정산 리포트")
 s_day = cfg['start_day']
 start_dt = date(sel_date.year, sel_date.month, s_day) if sel_date.day >= s_day else (date(sel_date.year, sel_date.month, s_day) - timedelta(days=30)).replace(day=s_day)
 end_dt = (start_dt + timedelta(days=32)).replace(day=s_day) - timedelta(days=1)
-st.markdown(f'<div class="period-text">📅 {start_dt.month}/{start_dt.day} ~ {end_dt.month}/{end_dt.day}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="period-text">📅 기간: {start_dt.month}/{start_dt.day} ~ {end_dt.month}/{end_dt.day}</div>', unsafe_allow_html=True)
 
 if not df_all.empty:
     p_df = df_all[(pd.to_datetime(df_all['날짜']).dt.date >= start_dt) & (pd.to_datetime(df_all['날짜']).dt.date <= end_dt)].sort_values("날짜")
