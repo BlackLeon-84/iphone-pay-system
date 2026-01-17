@@ -493,8 +493,10 @@ with tab_daily:
                      st.session_state.admin_log = f"✅ {target} 비밀번호 초기화 완료"; st.rerun()
                      
             if "admin_log" in st.session_state: st.markdown(f'<div class="admin-log">{st.session_state.admin_log}</div>', unsafe_allow_html=True)
-        st.divider();
-        if st.button("로그아웃", use_container_width=True): st.session_state.clear(); st.rerun()
+        st.divider()
+        if st.button("로그아웃", use_container_width=True):
+            st.session_state.logged_in = False
+            st.rerun()
 
     # --- 휴무 및 기록 출력 ---
     if st.button("🌴 오늘 휴무 등록", use_container_width=True):
