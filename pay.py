@@ -5,12 +5,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.3.6"
+SW_VERSION = "v3.3.7"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [디자인 보존] v3.2.7 CSS 100% 동일 적용 ---
+# --- [디자인 보존] CSS ---
 st.markdown(f"""
     <style>
     .block-container {{
@@ -30,7 +30,6 @@ st.markdown(f"""
         border-left: 4px solid #007bff;
     }}
 
-    /* 아이폰 가로 버튼 3열 보존 */
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
@@ -77,7 +76,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 연결 및 급여 설정 ---
+# --- 시트 및 설정 로직 ---
 SHEET_NAME = "아이폰정산"
 STAFF_LIST = ["태완", "남근", "성훈"]
 
@@ -171,14 +170,14 @@ if not st.session_state.logged_in:
             st.session_state.user_name = user_id
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• v3.2.7 관리자 설정 메뉴 완벽 복구<br>• 기본급/정산일/보험료 전용 시트 연동<br>• 아이폰 최적화 레이아웃 및 디자인 보존</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 정산 날짜 범위 계산 로직 정밀 보정<br>• 관리자 설정 및 아이폰 최적화 레이아웃 유지<br>• 급여 핵심 데이터 시트 동기화 완료</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name = st.session_state.user_name
 sal_cfg = st.session_state.salary_cfg
 cfg = st.session_state.config_all[user_name]
 
-# --- 사이드바 (관리자 메뉴 복구) ---
+# --- 사이드바 ---
 with st.sidebar:
     st.header("⚙️ 설정")
     if user_name == "태완":
@@ -187,7 +186,6 @@ with st.sidebar:
         t_sal = load_staff_salary_config(target_staff)
         t_cfg = st.session_state.config_all[target_staff]
         
-        # 품목 명칭 및 가격 수정 (v3.2.7 동일)
         new_names = []; new_prices = []
         for i in range(7):
             c1, c2 = st.columns(2)
@@ -200,12 +198,9 @@ with st.sidebar:
         ins = st.number_input("보험료", value=t_sal["insurance"])
         
         if st.button(f"💿 {target_staff} 설정 저장", use_container_width=True):
-            # 급여 정보는 시트 저장
             save_staff_salary_config(target_staff, base, s_day, ins)
-            # 품목 정보는 세션 저장
             st.session_state.config_all[target_staff].update({"item_names": new_names, "item_prices": new_prices})
-            if target_staff == user_name:
-                st.session_state.salary_cfg = {"base_salary": base, "start_day": s_day, "insurance": ins}
+            if target_staff == user_name: st.session_state.salary_cfg = {"base_salary": base, "start_day": s_day, "insurance": ins}
             st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] {target_staff} 설정 저장됨"
             st.rerun()
         if "admin_log" in st.session_state:
@@ -280,11 +275,21 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
            "합계": st.session_state.inc_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success("저장 완료!"); st.rerun()
 
-# --- 정산 리포트 ---
+# --- 정산 리포트 날짜 보정 로직 ---
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day, base, ins = sal_cfg['start_day'], sal_cfg['base_salary'], sal_cfg['insurance']
-start_dt = date(sel_date.year, sel_date.month, s_day) if sel_date.day >= s_day else (date(sel_date.year, sel_date.month, s_day) - timedelta(days=30)).replace(day=s_day)
+
+# 선택된 날짜 기준으로 정산 시작일과 종료일 계산
+if sel_date.day >= s_day:
+    # 이번 달 시작일 ~ 다음 달 종료일 전날
+    start_dt = date(sel_date.year, sel_date.month, s_day)
+else:
+    # 저번 달 시작일 ~ 이번 달 종료일 전날
+    prev_month = sel_date.replace(day=1) - timedelta(days=1)
+    start_dt = date(prev_month.year, prev_month.month, s_day)
+
+# 종료일은 시작일로부터 약 한달 뒤 (다음 정산일 하루 전)
 end_dt = (start_dt + timedelta(days=32)).replace(day=s_day) - timedelta(days=1)
 
 if not df_all.empty:
@@ -292,7 +297,7 @@ if not df_all.empty:
     if not p_df.empty:
         total_extra = p_df["합계"].sum()
         st.write(f"**🏦 예상 수령: {int(base + total_extra - ins):,}원**")
-        st.markdown(f'<div style="font-size:11px; color:#888; margin-top:-5px;">(기본 {base:,} + 추가 {total_extra:,} - 보험 {ins:,})</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:11px; color:#888; margin-top:-5px;">({start_dt.strftime("%m/%d")}~{end_dt.strftime("%m/%d")} 정산 기준)</div>', unsafe_allow_html=True)
         headers = ["날", "인센"] + [n[:1] for n in cfg["item_names"]] + ["합계"]
         rows_html = ""; item_sums = [0]*7
         for _, r in p_df.iterrows():
