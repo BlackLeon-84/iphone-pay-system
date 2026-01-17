@@ -7,7 +7,7 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.9.0"
+SW_VERSION = "v3.9.1"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -27,7 +27,7 @@ st.markdown(f"""
         padding-left: 5px; border-left: 4px solid #007bff;
     }}
     
-    /* [v3.9.0] 아이폰 3단 버튼 완벽 가로 정렬 강제 및 갭 최소화 */
+    /* [v3.9.1] 아이폰 3단 버튼 완벽 가로 정렬 강제 */
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
@@ -157,6 +157,7 @@ def save_staff_salary_config(name, base, day, ins, names, prices, ov_rate=0, app
     data = [name, format_curr(base), safe_int(day), format_curr(ins)] + names + [format_curr(p) for p in prices] + [format_curr(ov_rate), str(apply_global).upper()]
     if idx != -1: sheet.update(range_name=f"A{idx}:{chr(ord('A')+len(data)-1)}{idx}", values=[data])
     else: sheet.append_row(data)
+    # 캐시 무효화로 강제 동기화
     st.cache_data.clear()
 
 def get_user_worksheet(user_name):
@@ -195,7 +196,7 @@ def save_to_gsheet(user_name, df_row):
 def get_safe_date(y, m, d): ld = calendar.monthrange(y, m)[1]; return date(y, m, min(safe_int(d, 1), ld))
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
-# --- 세션 초기화 ---
+# --- 실행 로직 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 STAFF_LIST = get_dynamic_staff_list()
 
@@ -205,10 +206,12 @@ if not st.session_state.logged_in:
     admin_pw = st.text_input("비번", type="password") if user_id == "태완" else ""
     if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
-        else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.session_state.salary_cfg = load_staff_salary_config(user_id); st.rerun()
-    st.markdown(f'<div class="admin-log"><b>🕒 {get_now_kst().strftime("%H:%M:%S")} 기준 업데이트 로그</b><br>• [v3.9.0] 단가 소급 적용 옵션 추가<br>• 설정창 내 금액 시인성 레이블(1,000원) 복원<br>• 로그 기록 시간 값 복구</div>', unsafe_allow_html=True); st.stop()
+        else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
+    st.markdown(f'<div class="admin-log"><b>🕒 {get_now_kst().strftime("%H:%M:%S")} 기준 업데이트 로그</b><br>• [v3.9.1] 단가 변경 실시간 동기화 버그 수정<br>• 리포트 소급 적용 로직 안정화 완료</div>', unsafe_allow_html=True); st.stop()
 
-user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
+# [v3.9.1] 로그인 후 항상 최신 설정을 로드하여 실시간 동기화 보장
+user_name = st.session_state.user_name
+sal_cfg = load_staff_salary_config(user_name)
 is_ov_staff = user_name in ["태완", "남근"]
 
 # --- 사이드바 ---
@@ -241,7 +244,7 @@ with st.sidebar:
         st.divider(); s_day = st.slider(f"시작일 설정", 1, 31, value=min(max(1, t_sal["start_day"]), 31))
         
         st.subheader("🔄 정산 방식 옵션")
-        app_gl = st.checkbox("현재 단가를 과거 기록에도 전체 적용", value=t_sal.get("apply_global", False), help="체크 시 리포트 조회 때마다 현재 단가로 합계를 재계산합니다.")
+        app_gl = st.checkbox("현재 단가를 과거 기록에도 전체 적용", value=t_sal.get("apply_global", False), help="체크 시 리포터 조회 시마다 최신 단가로 재정산됩니다.")
         
         if st.button(f"💿 {target} 설정 저장", use_container_width=True): 
             save_staff_salary_config(target, base, s_day, ins, new_n, new_p, ov_r, app_gl)
@@ -283,13 +286,11 @@ if is_ov_staff:
     e_val = existing.iloc[0]["퇴근시간"] if not existing.empty else "20:00"
     e_idx = etime_list.index(e_val) if e_val in etime_list else 0
     
-    # [v3.9.0] 수당 실시간 업데이트를 위해 selectbox 앞에 연산 수행
-    sel_etime = st.selectbox("퇴근 시간 선택", options=etime_list, index=e_idx)
+    sel_etime = st.selectbox("퇴근 시간 선택", options=etime_list, index=e_idx, key="etime_sel")
     h, m = map(int, sel_etime.split(":")) if sel_etime != "24:00" else (24, 0)
     ov_min = max(0, (h * 60 + m) - 1200); ov_pay = (ov_min // 10) * sal_cfg["overtime_rate"]
     
-    # 시간 선택 즉시 반영 박스
-    st.markdown(f"<div style='background:#f0f8ff; padding:12px; border-radius:12px; border:2px solid #d0e8ff; margin-bottom:15px; text-align:center;'>실시간 시간수당: <b style='color:#007bff; font-size:20px;'>{ov_pay:,}원</b></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='background:#f0f8ff; padding:12px; border-radius:12px; border:2px solid #d0e8ff; margin-bottom:15px; text-align:center;'>현재 시간수당: <b style='color:#007bff; font-size:20px;'>{ov_pay:,}원</b></div>", unsafe_allow_html=True)
     st.metric("인센티브 합계", f"{st.session_state.inc_sum:,}원")
 else: st.metric("인센티브 합계", f"{st.session_state.inc_sum:,}원")
 
@@ -302,7 +303,7 @@ add_amt = st.number_input("인센 추가 금액", 0, step=1000, value=0, label_v
 with st.container(key="incen_buttons"):
     b1, b2, b3 = st.columns(3)
     b1.button("➕추가", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": st.session_state.inc_sum + add_amt}), st.session_state.inc_his.append({"val": add_amt})))
-    b2.button("↩️취소", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": st.session_state.inc_sum - st.session_state.inc_his.pop()['val']})) if st.session_state.inc_his else None)
+    b2.button("↩️취소", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": st.session_state.inc_sum - (st.session_state.inc_his.pop()['val'] if st.session_state.inc_his else 0)})))
     b3.button("🧹리셋", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": 0, "inc_his": []})))
 
 st.markdown('<div class="section-header">📦 품목 수량 입력</div>', unsafe_allow_html=True)
@@ -317,12 +318,12 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
     tot_val = st.session_state.inc_sum + ov_pay + sum([safe_int(c) * safe_int(p) for c, p in zip(cts, it_p)])
     row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "시간수당": ov_pay, "퇴근시간": sel_etime, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": tot_val, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row):
-        st.session_state.save_success_msg = f"✅ 데이터가 성공적으로 저장되었습니다! ({get_now_kst().strftime('%H:%M:%S')})"
+        st.session_state.save_success_show = f"✅ 데이터가 성공적으로 저장되었습니다! ({get_now_kst().strftime('%H:%M:%S')})"
         st.rerun()
 
-if st.session_state.get("save_success_msg"):
-    st.markdown(f'<div class="save-success">{st.session_state.save_success_msg}</div>', unsafe_allow_html=True)
-    st.session_state.save_success_msg = None
+if st.session_state.get("save_success_show"):
+    st.markdown(f'<div class="save-success">{st.session_state.save_success_show}</div>', unsafe_allow_html=True)
+    st.session_state.save_success_show = None
 
 # --- 정산 리포트 ---
 st.divider()
@@ -336,7 +337,7 @@ if not df_all.empty:
     df_all['date_dt'] = pd.to_datetime(df_all['날짜']).dt.date
     p_df = df_all[(df_all['date_dt'] >= s_dt) & (df_all['date_dt'] <= e_dt)].sort_values("날짜")
     if not p_df.empty:
-        # [v3.9.0] 단가 소급 적용 옵션 로직
+        # [v3.9.1] 소급 적용 로직: 현재 단가 it_p 를 사용하여 강제 재계산
         if sal_cfg.get("apply_global"):
             t_inc = safe_int(p_df["인센티브"].sum())
             t_ov = safe_int(p_df["시간수당"].sum())
@@ -371,7 +372,6 @@ if not df_all.empty:
             else:
                 row_inc, row_ov = safe_int(r['인센티브']), safe_int(r.get('시간수당', 0))
                 for i in range(1, 8): i_sums[i-1] += safe_int(r[f'item{i}'])
-                # 소급 적용 여부에 따른 행 합계 재계산
                 if sal_cfg.get("apply_global"):
                     row_total = row_inc + row_ov + sum([safe_int(r[f'item{i+1}']) * safe_int(it_p[i]) for i in range(7)])
                 else: row_total = safe_int(r['합계'])
