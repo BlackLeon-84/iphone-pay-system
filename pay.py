@@ -5,12 +5,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.3.2"
+SW_VERSION = "v3.2.7"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [디자인 보존] 아이폰 최적화 CSS ---
+# --- [v3.0.5 디자인 100% 보존 + 섹션 분리] CSS ---
 st.markdown(f"""
     <style>
     .block-container {{
@@ -21,6 +21,7 @@ st.markdown(f"""
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
     
+    /* 섹션 분리 디자인 (v3.0.5 스타일 유지) */
     .section-header {{
         font-size: 14px;
         font-weight: bold;
@@ -30,7 +31,7 @@ st.markdown(f"""
         border-left: 4px solid #007bff;
     }}
 
-    /* 아이폰 가로 버튼 3열 보존 */
+    /* 아이폰 가로 버튼 (v3.0.5 핵심 설정) */
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
@@ -50,6 +51,17 @@ st.markdown(f"""
         white-space: nowrap !important;
     }}
 
+    /* 관리자 설정 로그 스타일 */
+    .admin-log {{
+        font-size: 11px;
+        color: #155724;
+        background-color: #d4edda;
+        padding: 10px;
+        border-radius: 5px;
+        margin-top: 10px;
+        border: 1px solid #c3e6cb;
+    }}
+
     .st-key-login_btn button {{
         height: 50px !important;
         font-size: 18px !important;
@@ -67,31 +79,6 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 직원별 데이터 설정 (코드에서 직접 관리) ---
-USER_CONFIGS = {
-    "태완": {
-        "base_salary": 3500000,
-        "insurance": 104760,
-        "start_day": 13,
-        "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
-        "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]
-    },
-    "남근": {
-        "base_salary": 3500000,
-        "insurance": 104760,
-        "start_day": 13,
-        "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
-        "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]
-    },
-    "성훈": {
-        "base_salary": 3500000,
-        "insurance": 104760,
-        "start_day": 13,
-        "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
-        "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]
-    }
-}
-
 # --- 구글 시트 연결 ---
 SHEET_NAME = "아이폰정산"
 
@@ -108,8 +95,7 @@ def get_gsheet_client():
 def get_user_worksheet(user_name):
     client = get_gsheet_client()
     spreadsheet = client.open(SHEET_NAME)
-    try:
-        return spreadsheet.worksheet(user_name)
+    try: return spreadsheet.worksheet(user_name)
     except:
         new_sheet = spreadsheet.add_worksheet(title=user_name, rows="1000", cols="20")
         new_sheet.append_row(["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간"])
@@ -140,8 +126,12 @@ def save_to_gsheet(user_name, df_row):
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
 # --- 세션 설정 ---
-STAFF_LIST = list(USER_CONFIGS.keys())
+STAFF_LIST = ["태완", "남근", "성훈"]
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
+if "config_all" not in st.session_state:
+    st.session_state.config_all = {name: {"base_salary": 3500000, "start_day": 13, "insurance": 104760, 
+                                   "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
+                                   "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]} for name in STAFF_LIST}
 
 # --- 로그인 ---
 if not st.session_state.logged_in:
@@ -150,20 +140,35 @@ if not st.session_state.logged_in:
     admin_pw = st.text_input("비번", type="password") if user_id == "태완" else ""
     if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
-        else: 
-            st.session_state.logged_in = True
-            st.session_state.user_name = user_id
-            st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 직원별 개별 설정 코드 내장형 원복<br>• 시트 오류 방지 및 데이터 안정화 적용<br>• 아이폰 최적화 레이아웃 100% 보존</div>', unsafe_allow_html=True)
+        else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
+    st.markdown(f'<div class="update-log"><b>🚀 소프트웨어 버전: {SW_VERSION}</b><br>• 최근 7일 기록 아이콘 복구<br>• 관리자 설정 저장 로그 기능 추가<br>• 인센티브/품목 섹션 구분 디자인</div>', unsafe_allow_html=True)
     st.stop()
 
+# --- 사이드바 (관리자 설정 로그) ---
 user_name = st.session_state.user_name
-cfg = USER_CONFIGS[user_name] # 코드에 저장된 설정 사용
+cfg = st.session_state.config_all[user_name]
 
-# --- 사이드바 ---
 with st.sidebar:
-    st.header(f"👤 {user_name}님")
-    st.info(f"기본급: {cfg['base_salary']:,}원\n보험료: {cfg['insurance']:,}원\n시작일: {cfg['start_day']}일")
+    st.header("⚙️ 설정")
+    if user_name == "태완":
+        st.subheader("🛠️ 관리자 설정")
+        target_staff = st.selectbox("수정 대상 직원", STAFF_LIST)
+        t_cfg = st.session_state.config_all[target_staff]
+        new_names = []; new_prices = []
+        for i in range(7):
+            c1, c2 = st.columns(2)
+            n = c1.text_input(f"명칭{i+1}", value=t_cfg["item_names"][i], key=f"sn_{target_staff}_{i}")
+            p = c2.number_input(f"가격{i+1}", value=t_cfg["item_prices"][i], step=1000, key=f"sp_{target_staff}_{i}")
+            new_names.append(n); new_prices.append(p)
+        base = st.number_input("기본급", value=t_cfg["base_salary"])
+        s_day = st.slider("정산 시작일", 1, 31, t_cfg["start_day"])
+        ins = st.number_input("보험료", value=t_cfg["insurance"])
+        if st.button(f"💿 {target_staff} 설정 저장", use_container_width=True):
+            st.session_state.config_all[target_staff].update({"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices})
+            st.session_state.admin_log = f"✅ [{get_now_kst().strftime('%H:%M:%S')}] {target_staff}님 설정이 변경됨"
+            st.rerun()
+        if "admin_log" in st.session_state:
+            st.markdown(f'<div class="admin-log">{st.session_state.admin_log}</div>', unsafe_allow_html=True)
     if st.button("로그아웃"): st.session_state.logged_in = False; st.rerun()
 
 # --- 메인 화면 ---
@@ -182,7 +187,7 @@ if st.button("🌴 오늘 휴무 등록", use_container_width=True):
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.rerun()
 
-# --- 최근 7일 기록 ---
+# --- 최근 7일 기록 (복구 완료) ---
 st.write("**📅 최근 7일 기록**")
 weekly_html = '<div class="weekly-box">'
 today_kst = get_now_kst().date()
@@ -234,7 +239,7 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
            "합계": st.session_state.inc_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success("저장 완료!"); st.rerun()
 
-# --- 정산 리포트 ---
+# --- 정산 리포트 (원본 유지) ---
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day, base, ins = cfg['start_day'], cfg['base_salary'], cfg['insurance']
