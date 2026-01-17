@@ -272,7 +272,7 @@ if not st.session_state.logged_in:
     st.selectbox("직원 선택", options=STAFF_LIST, key="login_uid")
     st.text_input("비밀번호", type="password", key="login_pw", on_change=try_login)
     
-    if st.button("입장", use_container_width=True, on_click=try_login): pass
+    if st.button("입장", use_container_width=True, on_click=try_login, key="login_btn"): pass
 
     if st.session_state.get("login_error"):
         st.error(st.session_state.login_error); st.session_state.login_error = None
