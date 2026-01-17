@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.0.8"
+SW_VERSION = "v3.0.9"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -13,53 +13,31 @@ st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 # --- [스마트 레이아웃] 아이폰 100% 최적화 CSS ---
 st.markdown(f"""
     <style>
-    /* 1. 전체 여백 및 기본 스타일 */
-    .block-container {{
-        padding-top: 3.5rem !important;
-        max-width: 450px !important;
-        padding-left: 10px !important;
-        padding-right: 10px !important;
-    }}
+    .block-container {{ padding-top: 3.5rem !important; max-width: 450px !important; padding-left: 10px !important; padding-right: 10px !important; }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
     hr {{ border: 0; height: 1px; background: #eee; margin: 15px 0; }}
     div[data-baseweb="base-input"] {{ border: none !important; background-color: #f1f3f5 !important; border-radius: 8px !important; }}
 
-    /* 2. 아이폰용 버튼 가로 정렬 고정 (v3.0.0 스타일) */
-    .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 4px !important;
-        width: 100% !important;
-    }}
-    .st-key-incen_buttons button {{
-        font-size: 10px !important;
-        padding: 0px 1px !important;
-        min-height: 40px !important;
-        white-space: nowrap !important;
-    }}
+    /* 아이폰용 버튼 가로 정렬 고정 (v3.0.0 스타일) */
+    .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{ display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; width: 100% !important; }}
+    .st-key-incen_buttons button {{ font-size: 10px !important; padding: 0px 1px !important; min-height: 40px !important; white-space: nowrap; }}
 
-    /* 3. 로그인 및 강조 스타일 */
-    .st-key-login_btn button {{
-        height: 50px !important;
-        font-size: 18px !important;
-        font-weight: bold !important;
-        background-color: #007bff !important;
-        color: white !important;
-    }}
+    /* 로그인 및 강조 스타일 */
+    .st-key-login_btn button {{ height: 50px !important; font-size: 18px !important; font-weight: bold !important; background-color: #007bff !important; color: white !important; }}
 
-    /* 4. 테이블 및 로그 스타일 */
+    /* 테이블 및 로그 스타일 */
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
     .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
     .calc-detail {{ font-size: 11px; color: #888; margin-top: -5px; margin-bottom: 10px; }}
     .incen-log {{ font-size: 11px; color: #666; padding: 8px; background: #fcfcfc; border-radius: 5px; border-left: 3px solid #ddd; margin: 10px 0; }}
     .save-log {{ font-size: 12px; color: #1e88e5; font-weight: bold; margin-bottom: 5px; }}
+    .config-log {{ font-size: 11px; color: #28a745; background: #f0fff4; padding: 8px; border-radius: 5px; margin-top: 10px; border: 1px solid #c6f6d5; }}
     .update-log {{ font-size: 11px; color: #777; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 30px; border: 1px solid #eee; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 연결 (직원별 시트 접근) ---
+# --- 구글 시트 연결 ---
 SHEET_NAME = "아이폰정산"
 
 def get_gsheet_client():
@@ -116,6 +94,7 @@ if "config_dict" not in st.session_state:
         "item_names": ['일반필름', '풀필름', '젤리', '케이블', '어댑터', '추가1', '추가2'],
         "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]
     } for name in STAFF_LIST}
+if "admin_log" not in st.session_state: st.session_state.admin_log = []
 
 # --- 로그인 페이지 ---
 if not st.session_state.logged_in:
@@ -130,9 +109,9 @@ if not st.session_state.logged_in:
     st.markdown(f"""
         <div class="update-log">
             <b>🚀 시스템 업데이트 로그 ({now_d})</b><br>
-            • <b>정산 리포트 복구</b>: 하단 실적 테이블 및 급여 계산기 정상화<br>
-            • <b>직원별 독립 시트 도입</b>: 시트 내 탭 분리({', '.join(STAFF_LIST)})로 각자 데이터 관리<br>
-            • <b>날짜 로그 강화</b>: 모든 기록 로그에 {now_d} 형식 날짜 추가
+            • <b>숫자 가독성 개선</b>: 관리자 설정창의 모든 금액 입력 시 천 단위 콤마(,) 표시<br>
+            • <b>관리자 설정 로그</b>: 설정 변경 이력을 하단에서 실시간 확인 가능<br>
+            • <b>정산 리포트 복구 완료</b> 및 <b>직원별 독립 시트</b> 운영 중
         </div>
     """, unsafe_allow_html=True)
     st.stop()
@@ -147,18 +126,34 @@ with st.sidebar:
         st.subheader("🛠️ 관리자 설정")
         target_staff = st.selectbox("수정 대상 직원", STAFF_LIST)
         t_cfg = st.session_state.config_dict[target_staff]
+        
         new_names = []; new_prices = []
         for i in range(7):
             c1, c2 = st.columns(2)
             n = c1.text_input(f"명칭{i+1}", value=t_cfg["item_names"][i], key=f"sn_{target_staff}_{i}")
+            # 숫자 입력 시 콤마 표시 (format="%d" -> 기본값 혹은 콤마 지원)
             p = c2.number_input(f"가격{i+1}", value=t_cfg["item_prices"][i], step=1000, key=f"sp_{target_staff}_{i}")
             new_names.append(n); new_prices.append(p)
-        base = st.number_input("기본급", value=t_cfg["base_salary"])
+        
+        base = st.number_input("기본급", value=t_cfg["base_salary"], step=10000)
         s_day = st.slider("정산 시작일", 1, 31, t_cfg["start_day"])
-        ins = st.number_input("보험료", value=t_cfg["insurance"])
+        ins = st.number_input("보험료", value=t_cfg["insurance"], step=10)
+        
         if st.button(f"💿 {target_staff} 설정 저장", use_container_width=True):
-            st.session_state.config_dict[target_staff].update({"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices})
-            st.success(f"{get_now_kst().strftime('%Y-%m-%d')} | {target_staff} 설정 저장 완료"); st.rerun()
+            st.session_state.config_dict[target_staff].update({
+                "base_salary": base, "start_day": s_day, "insurance": ins, 
+                "item_names": new_names, "item_prices": new_prices
+            })
+            log_msg = f"{get_now_kst().strftime('%m-%d %H:%M:%S')} | {target_staff}님의 설정이 저장되었습니다."
+            st.session_state.admin_log.insert(0, log_msg) # 최신 로그를 위로
+            st.success("설정 저장 완료!"); st.rerun()
+            
+        # 설정 변경 로그 기록창
+        if st.session_state.admin_log:
+            st.markdown("**📝 설정 변경 로그**")
+            log_display = "<br>".join(st.session_state.admin_log[:5]) # 최근 5개만
+            st.markdown(f'<div class="config-log">{log_display}</div>', unsafe_allow_html=True)
+            
     if st.button("로그아웃"): st.session_state.logged_in = False; st.rerun()
 
 st.markdown(f'<div class="version-tag">{SW_VERSION}</div>', unsafe_allow_html=True)
@@ -168,6 +163,7 @@ st.write(f"### 💼 {user_name}님 실적")
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
+# 상단 저장 기록 로그
 existing_row = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
 if not existing_row.empty:
     save_time = existing_row.iloc[0].get('입력시간', '기록없음')
@@ -230,7 +226,7 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
            "합계": st.session_state.incen_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success(f"{str_date} 데이터 저장 성공!"); st.rerun()
 
-# --- 정산 리포트 복구 영역 ---
+# --- 정산 리포트 ---
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day = cfg['start_day']
