@@ -5,12 +5,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v3.2.1"
+SW_VERSION = "v3.2.3"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [v3.0.8 기반] 가로 버튼 꽉 차게 최적화 CSS ---
+# --- [v3.0.8 기반] 아이폰 가로 이탈 방지 CSS ---
 st.markdown(f"""
     <style>
     .block-container {{
@@ -18,32 +18,37 @@ st.markdown(f"""
         max-width: 450px !important;
         padding-left: 10px !important;
         padding-right: 10px !important;
+        overflow-x: hidden !important; /* 전체 화면 가로 스크롤 방지 */
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
-    hr {{ border: 0; height: 1px; background: #eee; margin: 15px 0; }}
-    div[data-baseweb="base-input"] {{ border: none !important; background-color: #f1f3f5 !important; border-radius: 8px !important; }}
-
-    /* 가로 버튼 유동적 너비(Flexible) 설정 */
+    
+    /* 인센티브 버튼 가로 이탈 방지 핵심 설정 */
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
-        gap: 5px !important; /* 버튼 사이 간격 */
+        gap: 4px !important;
         width: 100% !important;
     }}
+    
     .st-key-incen_buttons [data-testid="column"] {{
-        flex: 1 1 0% !important; /* 모든 컬럼이 동일한 비율로 늘어남 */
-        min-width: 0 !important;
+        flex: 1 !important;
+        min-width: 0 !important; /* 중요: 컬럼이 내용물 때문에 커지는 것 방지 */
     }}
+
     .st-key-incen_buttons button {{
         width: 100% !important;
-        font-size: 13px !important;
-        padding: 0px !important;
-        min-height: 45px !important;
+        font-size: 11px !important; /* 글자 크기를 살짝 줄여 이탈 방지 */
+        padding: 0px 2px !important;
+        min-height: 42px !important;
+        max-height: 42px !important;
         white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important; /* 글자가 넘치면 ... 처리 */
         border-radius: 8px !important;
     }}
 
+    /* 로그인 버튼 스타일 유지 */
     .st-key-login_btn button {{
         height: 50px !important;
         font-size: 18px !important;
@@ -55,10 +60,6 @@ st.markdown(f"""
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
     .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
-    .calc-detail {{ font-size: 11px; color: #888; margin-top: -5px; margin-bottom: 10px; }}
-    .incen-log {{ font-size: 11px; color: #666; padding: 8px; background: #fcfcfc; border-radius: 5px; border-left: 3px solid #ddd; margin: 10px 0; }}
-    .save-log {{ font-size: 12px; color: #1e88e5; font-weight: bold; margin-bottom: 5px; }}
-    .update-log {{ font-size: 11px; color: #777; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 30px; border: 1px solid #eee; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -118,7 +119,7 @@ if "config_dict" not in st.session_state:
         "item_prices": [9000, 18000, 9000, 15000, 23000, 0, 0]
     } for name in STAFF_LIST}
 
-# --- 로그인 페이지 ---
+# --- 로그인 페이지 (v3.0.8 복구) ---
 if not st.session_state.logged_in:
     st.title("🔐 로그인")
     user_id = st.selectbox("직원 선택", options=STAFF_LIST)
@@ -126,16 +127,6 @@ if not st.session_state.logged_in:
     if st.button("입장", use_container_width=True, key="login_btn"):
         if user_id == "태완" and admin_pw != "102030": st.error("비번 오류")
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
-    
-    now_d = get_now_kst().strftime("%Y-%m-%d")
-    st.markdown(f"""
-        <div class="update-log">
-            <b>🚀 시스템 업데이트 로그 ({now_d})</b><br>
-            • <b>가로 버튼 최적화</b>: 화면 너비에 맞춰 버튼이 꽉 차도록 레이아웃 수정<br>
-            • <b>로그인/리포트 디자인 고정</b>: v3.0.8 원본 스타일 유지<br>
-            • <b>최근 7일 기록</b>: 출근 현황 체크 메뉴 유지
-        </div>
-    """, unsafe_allow_html=True)
     st.stop()
 
 # --- 메인 본문 ---
@@ -169,13 +160,12 @@ sel_date = st.date_input("날짜", value=date.today(), label_visibility="collaps
 str_date = sel_date.strftime("%Y-%m-%d")
 
 existing_row = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
-if not existing_row.empty:
-    st.markdown(f'<div class="save-log">📝 {str_date} 기록 있음</div>', unsafe_allow_html=True)
 
 if st.button("🌴 오늘 휴무 등록", use_container_width=True):
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.rerun()
 
+# 7일 기록
 st.write("**📅 최근 7일 기록**")
 weekly_html = '<div style="display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px;">'
 today_kst = get_now_kst().date()
@@ -197,6 +187,7 @@ if "incen_sum" not in st.session_state or st.session_state.get("last_date") != s
 st.write(f"**💰 인센 합계: {st.session_state.incen_sum:,}원**")
 add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0, label_visibility="collapsed")
 
+# 가로 이탈 방지 버튼 영역
 with st.container(key="incen_buttons"):
     c1, c2, c3 = st.columns(3)
     if c1.button("➕추가", use_container_width=True):
@@ -225,7 +216,7 @@ if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=
            "합계": st.session_state.incen_sum + item_total, "비고": "정상", "입력시간": get_now_kst().strftime("%H:%M:%S")}
     if save_to_gsheet(user_name, row): st.success("저장 완료!"); st.rerun()
 
-# --- 정산 리포트 ---
+# 정산 리포트 유지
 st.divider()
 st.subheader("📊 정산 리포트")
 s_day = cfg['start_day']
@@ -237,16 +228,13 @@ if not df_all.empty:
     if not p_df.empty:
         total_extra = p_df["합계"].sum()
         st.write(f"**🏦 예상 수령: {int(cfg['base_salary'] + total_extra - cfg['insurance']):,}원**")
-        st.markdown(f'<div class="calc-detail">(기본 {cfg["base_salary"]:,} + 추가 {total_extra:,} - 보험 {cfg["insurance"]:,})</div>', unsafe_allow_html=True)
         
-        headers = ["날", "인센"] + [n[:1] for n in cfg["item_names"]] + ["합계"]
-        rows_html = ""; item_sums = [0]*7
+        headers = ["날", "인센", "필1", "필2", "젤", "케", "어", "추1", "추2", "합"]
+        rows_html = ""
         for _, r in p_df.iterrows():
             d = datetime.strptime(r['날짜'], '%Y-%m-%d').day
             if r['비고'] == "휴무": rows_html += f"<tr><td>{d}</td><td colspan='9' style='color:orange;'>🌴휴무</td></tr>"
             else:
                 item_tds = "".join([f"<td>{int(r[f'item{i}'])}</td>" for i in range(1, 8)])
-                for i in range(1, 8): item_sums[i-1] += int(r[f'item{i}'])
                 rows_html += f"<tr><td>{d}</td><td>{int(r['인센티브']):,}</td>{item_tds}<td style='color:blue;'>{int(r['합계']):,}</td></tr>"
-        rows_html += f"<tr class='total-row'><td>합</td><td>{p_df['인센티브'].sum():,}</td>" + "".join([f"<td>{s}</td>" for s in item_sums]) + f"<td>{total_extra:,}</td></tr>"
         st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{h}</th>" for h in headers])}</tr>{rows_html}</table>', unsafe_allow_html=True)
