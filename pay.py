@@ -453,9 +453,9 @@ for i in range(12):
         st_dt = get_safe_date(y, m, s_d)
     
     ed_dt = get_safe_date((st_dt + timedelta(days=33)).year, (st_dt + timedelta(days=33)).month, s_d) - timedelta(days=1)
-    # label format: 2025-02 (01/13 ~ 02/12)
-    lbl_m = ed_dt.strftime("%Y-%m")
-    m_opts.append(f"{lbl_m} ({st_dt.strftime('%m/%d')} ~ {ed_dt.strftime('%m/%d')})")
+    # label format: 2025년 02월 (1월 13일 ~ 2월 12일)
+    lbl_m = ed_dt.strftime("%Y년 %m월")
+    m_opts.append(f"{lbl_m} ({st_dt.month}월 {st_dt.day}일 ~ {ed_dt.month}월 {ed_dt.day}일)")
     m_ranges.append((st_dt, ed_dt))
 
 st.subheader("📊 정산 리포트 조회")
