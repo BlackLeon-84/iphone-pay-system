@@ -12,68 +12,213 @@ SW_VERSION = "v4.0.1"
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [디자인 보존 및 강화] CSS ---
+# --- [애플 스타일 디자인 업그레이드] CSS ---
 st.markdown(f"""
     <style>
-    .block-container {{
-        padding-top: 3.5rem !important;
-        max-width: 450px !important;
-        padding-left: 10px !important;
-        padding-right: 10px !important;
-    }}
-    .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
-    .section-header {{
-        font-size: 14px; font-weight: bold; color: #333; margin: 20px 0 10px 0;
-        padding-left: 5px; border-left: 4px solid #007bff;
-    }}
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
     
-    .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 3px !important;
-        width: 100% !important;
+    html, body, [data-testid="stAppViewContainer"] {{
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+        background-color: #F5F5F7 !important;
     }}
-    .st-key-incen_buttons [data-testid="stHorizontalBlock"] > div {{
-        flex: 1 1 0% !important;
-        min-width: 0 !important;
+
+    .block-container {{
+        padding-top: 2rem !important;
+        max-width: 480px !important;
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+        background-color: #F5F5F7 !important;
     }}
-    .st-key-incen_buttons button {{
-        font-size: 11px !important;
-        padding: 0px !important;
-        width: 100% !important;
-        min-height: 42px !important;
-        font-weight: bold !important;
+
+    /* 카드 공통 스타일 */
+    .apple-card {{
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 24px;
+        margin-bottom: 24px;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.02), 0 1px 3px rgba(0,0,0,0.08);
+    }}
+
+    .version-tag {{ 
+        font-size: 11px; 
+        color: #86868B; 
+        text-align: right; 
+        margin-bottom: 15px;
+        font-weight: 500;
+    }}
+
+    .section-header {{
+        font-size: 17px; 
+        font-weight: 700; 
+        color: #1D1D1F; 
+        margin: 30px 0 15px 0;
+        padding-left: 0;
         letter-spacing: -0.5px;
     }}
 
-    .admin-log {{ font-size: 11px; color: #155724; background-color: #d4edda; padding: 10px; border-radius: 5px; margin-top: 10px; border: 1px solid #c3e6cb; }}
-    .st-key-login_btn button {{ height: 50px !important; font-size: 18px !important; font-weight: bold !important; background-color: #007bff !important; color: white !important; }}
+    /* 인센티브 버튼 정렬 개선 */
+    .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
+        gap: 12px !important;
+    }}
+    .st-key-incen_buttons button {{
+        border-radius: 14px !important;
+        border: none !important;
+        background-color: #E8E8ED !important;
+        color: #1D1D1F !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        min-height: 52px !important;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }}
+    .st-key-incen_buttons button:hover {{
+        background-color: #D2D2D7 !important;
+        transform: scale(0.97);
+    }}
 
-    .status-card {{ padding: 12px; border-radius: 12px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 14px; }}
-    .status-saved {{ background-color: #e3f2fd; color: #1e88e5; border: 1px solid #bbdefb; }}
-    .status-missing {{ background-color: #fff3e0; color: #ef6c00; border: 1px solid #ffe0b2; }}
+    /* 메인 로그인 버튼 */
+    .st-key-login_btn button {{
+        height: 60px !important;
+        border-radius: 18px !important;
+        font-size: 19px !important;
+        font-weight: 600 !important;
+        background: linear-gradient(180deg, #0077ED 0%, #0060DF 100%) !important;
+        color: white !important;
+        border: none !important;
+        box-shadow: 0 4px 15px rgba(0, 119, 237, 0.35) !important;
+    }}
 
-    .weekly-box {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px; }}
-    
-    .report-table {{ width: 100%; font-size: 8.8px; text-align: center; border-collapse: collapse; table-layout: fixed; }}
-    .report-table th, .report-table td {{ border: 1px solid #eee; padding: 4px 0px; word-break: break-all; letter-spacing: -0.8px; }}
-    .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
-    
-    .inc-history-box {{ background: #fdfdfd; border: 1px solid #f0f0f0; border-radius: 8px; padding: 8px; margin-top: 5px; font-size: 11px; color: #666; }}
-    .inc-item {{ display: inline-block; background: #eee; padding: 2px 6px; border-radius: 4px; margin: 2px; }}
-    
-    .calc-detail {{ font-size: 13px; color: #333; margin: 10px 0; background: #f0f7ff; padding: 15px; border-radius: 10px; border: 1px solid #c2e0ff; line-height: 1.8; }}
-    .calc-line {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
-    .calc-total {{ font-size: 18px; font-weight: bold; color: #007bff; border-top: 1px dashed #abc; padding-top: 10px; margin-top: 10px; }}
-    
-    [data-testid="stSidebar"] .stSubheader {{ font-size: 14px; font-weight: bold; color: #007bff; margin-top: 15px; }}
-    .info-box {{ background: #fafafa; border: 1px solid #eee; padding: 10px; border-radius: 8px; font-size: 12px; line-height: 1.6; }}
-    .info-label {{ color: #777; font-weight: bold; width: 70px; display: inline-block; }}
-    .info-val {{ color: #333; font-weight: bold; }}
+    /* 상태 표시 배지 */
+    .status-card {{ 
+        padding: 16px; 
+        border-radius: 18px; 
+        margin-bottom: 25px; 
+        text-align: center; 
+        font-weight: 600; 
+        font-size: 15px; 
+    }}
+    .status-saved {{ background-color: #E3F2FD; color: #0071E3; border: 1px solid #CEE7FE; }}
+    .status-missing {{ background-color: #FFF4E5; color: #FF8800; border: 1px solid #FFE7CC; }}
 
-    .save-success {{ color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb; padding: 12px; border-radius: 8px; font-weight: bold; margin-top: 10px; text-align: center; font-size: 14px; }}
-    .amt-label {{ color: #007bff; font-size: 11px; font-weight: bold; display: block; margin-top: -15px; margin-bottom: 10px; }}
+    /* 주간 집계 박스 */
+    .weekly-box {{ 
+        display: flex; 
+        justify-content: space-around; 
+        background: white; 
+        padding: 18px; 
+        border-radius: 18px; 
+        margin-bottom: 25px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }}
+
+    /* 리포트 테이블 */
+    .report-table {{ 
+        width: 100%; 
+        font-size: 11px; 
+        text-align: center; 
+        border-collapse: separate; 
+        border-spacing: 0;
+        table-layout: fixed; 
+        background: white;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid #F0F0F2;
+    }}
+    .report-table th {{ background-color: #FBFBFD; color: #86868B; font-weight: 600; padding: 12px 4px; border-bottom: 1px solid #F0F0F2; }}
+    .report-table td {{ padding: 12px 4px; border-bottom: 1px solid #F0F0F2; color: #1D1D1F; }}
+    .total-row {{ background-color: #FBFBFD !important; font-weight: 700; color: #0071E3 !important; }}
+
+    /* 인센티브 내역 */
+    .inc-history-box {{ 
+        background: white; 
+        border: 1px solid #E8E8ED; 
+        border-radius: 14px; 
+        padding: 12px; 
+        margin-top: 10px; 
+        font-size: 13px; 
+        color: #1D1D1F; 
+    }}
+    .inc-item {{ 
+        display: inline-block; 
+        background: #F5F5F7; 
+        padding: 6px 12px; 
+        border-radius: 10px; 
+        margin: 3px; 
+        font-weight: 500;
+        color: #424245;
+    }}
+
+    /* 정산 정보 상세 박스 */
+    .calc-detail {{ 
+        font-size: 15px; 
+        color: #1D1D1F; 
+        margin: 15px 0; 
+        background: white; 
+        padding: 28px; 
+        border-radius: 22px; 
+        box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+        line-height: 1.7; 
+    }}
+    .calc-line {{ display: flex; justify-content: space-between; margin-bottom: 10px; }}
+    .calc-label {{ color: #86868B; }}
+    .calc-val {{ font-weight: 600; }}
+    .calc-total {{ 
+        font-size: 24px; 
+        font-weight: 700; 
+        color: #1D1D1F; 
+        border-top: 1px solid #F5F5F7; 
+        padding-top: 18px; 
+        margin-top: 18px; 
+    }}
+
+    /* 사이드바 스타일 */
+    [data-testid="stSidebar"] {{
+        background-color: #FAFAFB !important;
+    }}
+    [data-testid="stSidebar"] .stSubheader {{ 
+        font-size: 16px; 
+        font-weight: 700; 
+        color: #1D1D1F; 
+        margin-top: 25px; 
+    }}
+    .info-box {{ 
+        background: white; 
+        padding: 18px; 
+        border-radius: 18px; 
+        font-size: 14px; 
+        line-height: 1.9; 
+        border: 1px solid #E8E8ED;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.03);
+    }}
+    .info-label {{ color: #86868B; font-weight: 500; width: 85px; display: inline-block; }}
+    .info-val {{ color: #1D1D1F; font-weight: 600; }}
+
+    /* 저장 성공 알림 */
+    .save-success {{ 
+        color: #008037; 
+        background-color: #E8F5E9; 
+        padding: 18px; 
+        border-radius: 18px; 
+        font-weight: 600; 
+        margin-top: 20px; 
+        text-align: center; 
+        font-size: 15px; 
+        border: 1px solid #C8E6C9;
+    }}
+    
+    /* 입력 위젯 커스텀 */
+    div[data-baseweb="input"] {{
+        border-radius: 14px !important;
+        border: 1px solid #D2D2D7 !important;
+        background-color: white !important;
+        transition: border-color 0.2s ease !important;
+    }}
+    div[data-baseweb="input"]:focus-within {{
+        border-color: #0071E3 !important;
+    }}
+    .amt-label {{ color: #0071E3; font-size: 13px; font-weight: 600; display: block; margin-top: -10px; margin-bottom: 14px; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -233,7 +378,7 @@ df_all = load_data_from_gsheet(user_name)
 
 # --- 메인 화면 변수 및 날짜 처리 ---
 st.markdown(f'<div class="version-tag">{SW_VERSION}</div>', unsafe_allow_html=True)
-st.write(f"### 💼 {user_name}님 실적")
+st.markdown(f'<div class="apple-card"><h2 style="margin:0; font-size:22px; color:#1D1D1F;">💼 {user_name}님 실적</h2></div>', unsafe_allow_html=True)
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed"); str_date = sel_date.strftime("%Y-%m-%d")
 
 # [v4.0.1] 세션 초기값 보장 로직
@@ -402,5 +547,5 @@ if not df_all.empty:
                 disp_inc, ov_td = (row_inc if is_ov_staff else row_inc + row_ov), (f"<td>{row_ov:,}</td>" if is_ov_staff else "")
                 it_tds = "".join([f"<td>{safe_int(r[f'item{i}'])}</td>" for i in range(1, 8)])
                 r_html += f"<tr><td style='font-weight:bold;'>{md}</td><td>{disp_inc:,}</td>{ov_td}{it_tds}<td style='color:blue;'>{row_total:,}</td></tr>"
-        r_html += f"<tr class='total-row'><td>합계</td><td>{(t_inc if is_ov_staff else t_inc + t_ov):,}</td>" + (f"<td>{t_ov:,}</td>" if is_ov_staff else "") + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{total_sum_val:,}</td></tr>"
+        r_html += f"<tr class='total-row'><td>합계</td><td>{(t_inc if is_ov_staff else t_inc + t_ov):?}</td>" + (f"<td>{t_ov:,}</td>" if is_ov_staff else "") + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{total_sum_val:,}</td></tr>"
         st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{x}</th>" for x in hds])}</tr>{r_html}</table>', unsafe_allow_html=True)
