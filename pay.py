@@ -7,12 +7,12 @@ import calendar
 import time
 
 # 소프트웨어 버전
-SW_VERSION = "v3.4.8"
+SW_VERSION = "v3.5.0"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [디자인 보존] 원본 CSS ---
+# --- [디자인 보존 및 강화] CSS ---
 st.markdown(f"""
     <style>
     .block-container {{
@@ -26,6 +26,8 @@ st.markdown(f"""
         font-size: 14px; font-weight: bold; color: #333; margin: 20px 0 10px 0;
         padding-left: 5px; border-left: 4px solid #007bff;
     }}
+    
+    /* 인센티브 버튼 레이아웃 */
     .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
         display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; width: 100% !important;
     }}
@@ -35,22 +37,39 @@ st.markdown(f"""
     .st-key-incen_buttons button {{
         font-size: 10px !important; padding: 0px 1px !important; width: 100% !important; min-height: 40px !important; white-space: nowrap !important;
     }}
+
     .admin-log {{
         font-size: 11px; color: #155724; background-color: #d4edda; padding: 10px; border-radius: 5px; margin-top: 10px; border: 1px solid #c3e6cb;
     }}
     .st-key-login_btn button {{
         height: 50px !important; font-size: 18px !important; font-weight: bold !important; background-color: #007bff !important; color: white !important;
     }}
+
+    /* 상태 카드 디자인 */
+    .status-card {{
+        padding: 12px; border-radius: 12px; margin-bottom: 15px; text-align: center; font-weight: bold; font-size: 14px;
+    }}
+    .status-saved {{ background-color: #e3f2fd; color: #1e88e5; border: 1px solid #bbdefb; }}
+    .status-missing {{ background-color: #fff3e0; color: #ef6c00; border: 1px solid #ffe0b2; }}
+
     .weekly-box {{ display: flex; justify-content: space-around; background: #f8f9fa; padding: 10px; border-radius: 10px; margin-bottom: 15px; }}
     .report-table {{ width: 100%; font-size: 10px; text-align: center; border-collapse: collapse; }}
     .report-table th, .report-table td {{ border: 1px solid #eee; padding: 5px 2px; }}
     .total-row {{ background-color: #f2f2f2 !important; font-weight: bold; }}
-    .save-log {{ font-size: 12px; color: #1e88e5; font-weight: bold; margin-bottom: 5px; }}
     .update-log {{ font-size: 11px; color: #777; background: #f9f9f9; padding: 10px; border-radius: 8px; margin-top: 30px; border: 1px solid #eee; }}
+    
+    /* 인센 히스토리 목록 */
+    .inc-history-box {{
+        background: #fdfdfd; border: 1px solid #f0f0f0; border-radius: 8px; padding: 8px; margin-top: 5px; font-size: 11px; color: #666;
+    }}
+    .inc-item {{ display: inline-block; background: #eee; padding: 2px 6px; border-radius: 4px; margin: 2px; }}
+    
+    /* 리포트 상세 수식 */
+    .calc-detail {{ font-size: 11px; color: #888; margin-top: 5px; background: #fcfcfc; padding: 8px; border-radius: 5px; border-left: 3px solid #ddd; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 구글 시트 로직 (API 최적화) ---
+# --- 구글 시트 로직 ---
 SHEET_NAME = "아이폰정산"
 BASE_STAFF = ["태완", "남근", "성훈"]
 
@@ -184,7 +203,7 @@ if not st.session_state.logged_in:
             st.session_state.user_name = user_id
             st.session_state.salary_cfg = load_staff_salary_config(user_id)
             st.rerun()
-    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 업데이트</b><br>• f-string 구문 오류(SyntaxError) 수정<br>• 구글 API 속도 제한 최적화<br>• 아이폰 최적화 디자인 유지</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="update-log"><b>🚀 {SW_VERSION} 업데이트</b><br>• 저장 상태 카드(Badge) 디자인 개선<br>• 인센티브 건별 히스토리 기록 추적<br>• 예상 수령액 상세 계산 내역 표시<br>• 리포트 가독성 강화 (날짜 크기, 제목 2글자)</div>', unsafe_allow_html=True)
     st.stop()
 
 user_name, sal_cfg = st.session_state.user_name, st.session_state.salary_cfg
@@ -223,8 +242,13 @@ st.write(f"### 💼 {user_name}님 실적")
 sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed")
 str_date = sel_date.strftime("%Y-%m-%d")
 
+# [업데이트] 상태 로그 디자인 개선
 existing = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
-if not existing.empty: st.markdown(f'<div class="save-log">📝 {existing.iloc[0].get("입력시간", "기록없음")} 저장됨</div>', unsafe_allow_html=True)
+if not existing.empty:
+    save_time = existing.iloc[0].get("입력시간", "기록없음")
+    st.markdown(f'<div class="status-card status-saved">✅ {str_date} 데이터가 저장되어 있습니다 ({save_time})</div>', unsafe_allow_html=True)
+else:
+    st.markdown(f'<div class="status-card status-missing">⚠️ {str_date} 데이터가 아직 등록되지 않았습니다</div>', unsafe_allow_html=True)
 
 if st.button("🌴 오늘 휴무 등록", use_container_width=True):
     row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
@@ -242,6 +266,8 @@ for i in range(6, -1, -1):
 st.markdown(w_box + '</div>', unsafe_allow_html=True)
 
 st.divider()
+
+# --- 인센티브 섹션 ---
 st.markdown('<div class="section-header">💰 인센티브 입력</div>', unsafe_allow_html=True)
 is_edit = not existing.empty
 if "inc_sum" not in st.session_state or st.session_state.get("last_date") != str_date:
@@ -250,6 +276,14 @@ if "inc_sum" not in st.session_state or st.session_state.get("last_date") != str
     st.session_state.last_date = str_date
 
 st.write(f"현재 합계: **{st.session_state.inc_sum:,}원**")
+
+# [업데이트] 히스토리 내역 표시
+if st.session_state.inc_his:
+    h_html = '<div class="inc-history-box">'
+    for i, item in enumerate(st.session_state.inc_his):
+        h_html += f'<span class="inc-item">#{i+1}: {item["val"]:,}원</span>'
+    st.markdown(h_html + '</div>', unsafe_allow_html=True)
+
 add_amt = st.number_input("인센 금액", 0, step=1000, value=0, label_visibility="collapsed")
 with st.container(key="incen_buttons"):
     c1, c2, c3 = st.columns(3)
@@ -257,10 +291,15 @@ with st.container(key="incen_buttons"):
         st.session_state.inc_sum += add_amt
         st.session_state.inc_his.append({"val": add_amt}); st.rerun()
     if c2.button("↩️취소", use_container_width=True) and st.session_state.inc_his:
-        st.session_state.inc_sum -= st.session_state.inc_his.pop()['val']; st.rerun()
+        removed = st.session_state.inc_his.pop()
+        st.session_state.inc_sum -= removed['val']
+        st.rerun()
     if c3.button("🧹리셋", use_container_width=True):
-        st.session_state.inc_sum = 0; st.session_state.inc_his = []; st.rerun()
+        st.session_state.inc_sum = 0
+        st.session_state.inc_his = []
+        st.rerun()
 
+# --- 품목 섹션 ---
 st.markdown('<div class="section-header">📦 품목 수량 입력</div>', unsafe_allow_html=True)
 cts = []
 it_n, it_p = sal_cfg["item_names"], sal_cfg["item_prices"]
@@ -291,19 +330,29 @@ if not df_all.empty:
     p_df = df_all[(df_all['date_dt'] >= s_dt) & (df_all['date_dt'] <= e_dt)].sort_values("날짜")
     if not p_df.empty:
         t_ex = safe_int(p_df["합계"].sum())
-        st.write(f"**🏦 예상 수령: {int(b + t_ex - ins):,}원**")
-        st.markdown(f'<div style="font-size:11px; color:#888; margin-top:-5px;">({s_dt.strftime("%m/%d")}~{e_dt.strftime("%m/%d")} 정산 기준)</div>', unsafe_allow_html=True)
-        hds = ["날", "인센"] + [n[:1] for n in it_n] + ["합계"]
+        
+        # [업데이트] 예상 수령액 상세 내역 표시
+        final_pay = int(b + t_ex - ins)
+        st.write(f"**🏦 예상 수령: {final_pay:,}원**")
+        st.markdown(f"""
+        <div class="calc-detail">
+            <b>계산 상세:</b> {b:,}(기본급) + {t_ex:,}(실적합계) - {ins:,}(보험료) = <b>{final_pay:,}원</b><br>
+            <span style="font-size:10px; color:#aaa;">({s_dt.strftime("%m/%d")}~{e_dt.strftime("%m/%d")} 정산 기준)</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # [업데이트] 제목 2글자화
+        hds = ["날짜", "인센"] + [n[:2] for n in it_n] + ["합계"]
         r_html, i_sums = "", [0]*7
         for _, r in p_df.iterrows():
             d = datetime.strptime(r['날짜'], '%Y-%m-%d').day
-            if r['비고'] == "휴무": r_html += f"<tr><td>{d}</td><td colspan='9' style='color:orange;'>🌴휴무</td></tr>"
+            if r['비고'] == "휴무": r_html += f"<tr><td style='font-size:12px; font-weight:bold;'>{d}</td><td colspan='9' style='color:orange;'>🌴휴무</td></tr>"
             else:
                 it_tds = "".join([f"<td>{safe_int(r[f'item{i}'])}</td>" for i in range(1, 8)])
                 for i in range(1, 8): i_sums[i-1] += safe_int(r[f'item{i}'])
-                r_html += f"<tr><td>{d}</td><td>{safe_int(r['인센티브']):,}</td>{it_tds}<td style='color:blue;'>{safe_int(r['합계']):,}</td></tr>"
+                # [업데이트] 날짜 글씨 키움
+                r_html += f"<tr><td style='font-size:12px; font-weight:bold;'>{d}</td><td>{safe_int(r['인센티브']):,}</td>{it_tds}<td style='color:blue;'>{safe_int(r['합계']):,}</td></tr>"
         
-        # SyntaxError 해결: 합계 계산을 f-string 밖에서 미리 처리
         total_inc_val = safe_int(p_df['인센티브'].sum()) if not p_df.empty else 0
-        r_html += f"<tr class='total-row'><td>합</td><td>{total_inc_val:,}</td>" + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{t_ex:,}</td></tr>"
+        r_html += f"<tr class='total-row'><td>합계</td><td>{total_inc_val:,}</td>" + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{t_ex:,}</td></tr>"
         st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{x}</th>" for x in hds])}</tr>{r_html}</table>', unsafe_allow_html=True)
