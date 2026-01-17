@@ -8,7 +8,7 @@ import time
 import hashlib
 
 # --- 상수 및 설정 ---
-SW_VERSION = "v4.2.0"
+SW_VERSION = "v4.4.0"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -268,10 +268,10 @@ if not st.session_state.logged_in:
     <div class="admin-log">
         <b>🕒 {get_now_kst().strftime("%Y-%m-%d")} 업데이트 ({SW_VERSION})</b><br>
         <div style="margin-top:5px; line-height:1.4;">
-        • <b>[리포트]</b> 월별 리포트 조회 (과거 데이터 확인)<br>
-        • <b>[리포트]</b> 현금 수령액(가불) 정산 기능 추가<br>
-        • <b>[데이터]</b> 인센티브 상세 내역(1+1) 영구 저장<br>
-        • <b>[개선]</b> 날짜 표기 가독성 개선
+        • <b>[UI 혁신]</b> '일일 입력'과 '월간 정산' 탭 분리<br>
+        • <b>[기능]</b> 카드 공제 상세 입력(내역별 추가) 기능<br>
+        • <b>[기능]</b> 공제 제외(식대 등) 체크 기능 도입<br>
+        • <b>[수정]</b> 리포트 빈 화면 및 실행 오류 해결
         </div>
     </div>
     ''', unsafe_allow_html=True); st.stop()
@@ -327,6 +327,157 @@ with tab_daily:
             val = safe_int(ext_data.iloc[0][f"item{i+1}"]) if not ext_data.empty else 0
             st.session_state[f"it_input_{i}"] = val
         st.rerun()
+
+    existing = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
+    if not existing.empty: st.markdown(f'<div class="status-card status-saved">✅ {str_date} 데이터가 저장되어 있습니다</div>', unsafe_allow_html=True)
+    else: st.markdown(f'<div class="status-card status-missing">⚠️ {str_date} 데이터가 아직 등록되지 않았습니다</div>', unsafe_allow_html=True)
+
+    # --- 사이드바 ---
+    with st.sidebar:
+        st.header("⚙️ 설정")
+        
+        with st.expander("🔑 비밀번호 변경"):
+            cur_pw = st.text_input("현재 비밀번호", type="password", key="cp_cur")
+            new_pw = st.text_input("새 비밀번호", type="password", key="cp_new")
+            chk_pw = st.text_input("새 비밀번호 확인", type="password", key="cp_chk")
+            if st.button("비밀번호 변경", use_container_width=True):
+                if not check_password(cur_pw, sal_cfg.get("password_hash", "")): st.error("현재 비밀번호 불일치")
+                elif new_pw != chk_pw: st.error("새 비밀번호가 일치하지 않습니다")
+                elif len(new_pw) < 4: st.error("비밀번호는 4자리 이상이어야 합니다")
+                else:
+                    if update_password(user_name, hash_password(new_pw)):
+                        st.success("비밀번호 변경 완료! 다시 로그인해주세요."); time.sleep(1)
+                        st.session_state.logged_in = False; st.rerun()
+                    else: st.error("변경 실패")
+
+        if user_name != "태완":
+            st.subheader("👤 내 정보 (보기 전용)")
+            info_html = f"<div class='info-box'><span class='info-label'>기본급:</span> <span class='info-val'>{sal_cfg['base_salary']:,}원</span><br>"
+            if is_ov_staff: info_html += f"<span class='info-label'>시간수당:</span> <span class='info-val'>10분당 {sal_cfg['overtime_rate']:,}원</span><br>"
+            info_html += f"<span class='info-label'>보험료:</span> <span class='info-val'>{sal_cfg['insurance']:,}원</span><br><span class='info-label'>정산일:</span> <span class='info-val'>매달 {sal_cfg['start_day']}일</span><hr style='margin:5px 0;'><b>[품목 단가]</b><br>"
+            for n, p in zip(sal_cfg["item_names"], sal_cfg["item_prices"]): info_html += f"<span class='info-label'>{n[:4]}:</span> <span class='info-val'>{p:,}원</span><br>"
+            st.markdown(info_html + "</div>", unsafe_allow_html=True)
+        if user_name == "태완":
+            st.subheader("🛠️ 관리자 설정")
+            target = st.selectbox("수정 대상 직원", STAFF_LIST); t_sal = load_staff_salary_config(target)
+            st.subheader("📦 품목 명칭 및 단가")
+            new_n, new_p = [], []
+            for i in range(7):
+                c1, c2 = st.columns([1.2, 1]); n = c1.text_input(f"명칭{i+1}", value=t_sal["item_names"][i], key=f"sn_{target}_{i}")
+                p = c2.number_input(f"단가{i+1}", value=t_sal["item_prices"][i], step=1000, key=f"sp_{target}_{i}")
+                with c2: st.markdown(f"<span class='amt-label'>({p:,}원)</span>", unsafe_allow_html=True)
+                new_n.append(n); new_p.append(p)
+            st.divider(); st.subheader("💰 급여 및 수당 설정")
+            base = st.number_input(f"기본급 수정", value=safe_int(t_sal["base_salary"]), step=10000)
+            st.markdown(f"<span class='amt-label'>({base:,}원)</span>", unsafe_allow_html=True)
+            ov_r = st.number_input(f"시간수당(10분당)", value=safe_int(t_sal["overtime_rate"]), step=100) if target in ["태완", "남근"] else 0
+            if target in ["태완", "남근"]: st.markdown(f"<span class='amt-label'>({ov_r:,}원)</span>", unsafe_allow_html=True)
+            ins = st.number_input(f"보험료 수정", value=safe_int(t_sal["insurance"]), step=1000)
+            st.markdown(f"<span class='amt-label'>({ins:,}원)</span>", unsafe_allow_html=True)
+            st.divider(); s_day = st.slider(f"시작일 설정", 1, 31, value=min(max(1, t_sal["start_day"]), 31))
+            app_gl = st.checkbox("현재 단가를 과거 기록에도 전체 적용", value=t_sal.get("apply_global", False))
+            if st.button(f"💿 {target} 설정 저장", use_container_width=True): 
+                save_staff_salary_config(target, base, s_day, ins, new_n, new_p, ov_r, app_gl, t_sal.get("password_hash", ""))
+                st.session_state.admin_log = f"✅ {target} 설정 저장 완료 ({get_now_kst().strftime('%H:%M:%S')})"; st.rerun()
+            
+            st.divider()
+            if st.button(f"🔄 {target} 비밀번호 초기화 (0000)", type="secondary", use_container_width=True):
+                 default_hash = hash_password("102030" if target == "태완" else "0000")
+                 if update_password(target, default_hash):
+                     st.session_state.admin_log = f"✅ {target} 비밀번호 초기화 완료"; st.rerun()
+                     
+            if "admin_log" in st.session_state: st.markdown(f'<div class="admin-log">{st.session_state.admin_log}</div>', unsafe_allow_html=True)
+        st.divider();
+        if st.button("로그아웃", use_container_width=True): st.session_state.clear(); st.rerun()
+
+    # --- 휴무 및 기록 출력 ---
+    if st.button("🌴 오늘 휴무 등록", use_container_width=True):
+        row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "시간수당": 0, "퇴근시간": "휴무", "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
+        if save_to_gsheet(user_name, row): st.rerun()
+
+    st.write("**📅 최근 7일 기록**")
+    w_box = '<div class="weekly-box">'
+    for i in range(6, -1, -1):
+        td = get_now_kst().date() - timedelta(days=i); ts = td.strftime("%Y-%m-%d"); dd = df_all[df_all["날짜"] == ts] if not df_all.empty else pd.DataFrame()
+        icon = "✅" if not dd.empty and dd.iloc[0]['비고'] != "휴무" else ("🌴" if not dd.empty else "⚪")
+        w_box += f'<div style="text-align:center;"><div style="font-size:10px;">{td.day}일</div><div>{icon}</div></div>'
+    st.markdown(w_box + '</div>', unsafe_allow_html=True); st.divider()
+
+    # --- 수당 및 인센티브 ---
+    st.markdown('<div class="section-header">💰 수당 및 인센티브</div>', unsafe_allow_html=True)
+    if "inc_sum" not in st.session_state:
+        st.session_state.inc_sum = safe_int(existing.iloc[0]["인센티브"]) if not existing.empty else 0
+        st.session_state.inc_his = [{"val": safe_int(existing.iloc[0]["인센티브"])}] if not existing.empty and safe_int(existing.iloc[0]["인센티브"]) > 0 else []
+
+    ov_pay, sel_etime = 0, "20:00"
+    if is_ov_staff:
+        etime_list = [f"{h}:{m:02d}" for h in range(20, 24) for m in range(0, 60, 10)] + ["24:00"]
+        e_val = existing.iloc[0]["퇴근시간"] if not existing.empty else "20:00"
+        e_idx = etime_list.index(e_val) if e_val in etime_list else 0
+        sel_etime = st.selectbox("퇴근 시간 선택", options=etime_list, index=e_idx)
+        h, m = map(int, sel_etime.split(":")) if sel_etime != "24:00" else (24, 0)
+        ov_min = max(0, (h * 60 + m) - 1200); ov_pay = (ov_min // 10) * sal_cfg["overtime_rate"]
+        st.markdown(f"<div style='background:#f0f8ff; padding:12px; border-radius:12px; border:2px solid #d0e8ff; margin-bottom:15px; text-align:center;'>현재 시간수당: <b style='color:#007bff; font-size:20px;'>{ov_pay:,}원</b></div>", unsafe_allow_html=True)
+        st.metric("인센티브 합계", f"{st.session_state.inc_sum:,}원")
+    else: st.metric("인센티브 합계", f"{st.session_state.inc_sum:,}원")
+
+    if st.session_state.inc_his:
+        h_html = '<div class="inc-history-box">'
+        for i, item in enumerate(st.session_state.inc_his): h_html += f'<span class="inc-item">#{i+1}: {item["val"]:,}원</span>'
+        st.markdown(h_html + '</div>', unsafe_allow_html=True)
+
+    st.number_input("인센티브 추가 금액 (입력 후 추가 버튼 클릭)", 0, step=1000, label_visibility="collapsed", key="inc_input_field")
+    with st.container():
+        b1, b2, b3 = st.columns(3)
+        def add_inc():
+            val = st.session_state.inc_input_field
+            if val > 0:
+                st.session_state.inc_sum += val
+                st.session_state.inc_his.append({"val": val})
+                st.session_state.inc_input_field = 0
+        b1.button("➕추가", use_container_width=True, on_click=add_inc)
+        b2.button("↩️취소", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": st.session_state.inc_sum - (st.session_state.inc_his.pop()['val'] if st.session_state.inc_his else 0)})))
+        b3.button("🧹리셋", use_container_width=True, on_click=lambda: (st.session_state.update({"inc_sum": 0, "inc_his": []})))
+
+    # --- 품목 수량 입력 ---
+    st.markdown('<div class="section-header">📦 품목 수량 입력</div>', unsafe_allow_html=True)
+    it_n, it_p = sal_cfg["item_names"], sal_cfg["item_prices"]
+    # 초기 세션값 할당 (로드된 값 또는 0)
+    for i in range(7):
+        if f"it_input_{i}" not in st.session_state:
+            st.session_state[f"it_input_{i}"] = safe_int(existing.iloc[0][f"item{i+1}"]) if not existing.empty else 0
+
+    for i in range(0, 6, 2):
+        c1, c2 = st.columns(2)
+        with c1: st.number_input(it_n[i], 0, key=f"it_input_{i}")
+        with c2: st.number_input(it_n[i+1], 0, key=f"it_input_{i+1}")
+    st.number_input(it_n[6], 0, key="it_input_6")
+
+    if st.button("✅ 최종 데이터 저장", type="primary", use_container_width=True):
+        cts = [st.session_state[f"it_input_{i}"] for i in range(7)]
+        tot_val = st.session_state.inc_sum + ov_pay + sum([safe_int(c) * safe_int(p) for c, p in zip(cts, it_p)])
+        
+        # 상세 내역 직렬화 (Serialize)
+        remark_base = "정상"
+        if st.session_state.inc_his:
+            valid_vals = [str(item['val']) for item in st.session_state.inc_his if item['val'] != 0]
+            if valid_vals:
+                remark_base += " | " + "+".join(valid_vals)
+                
+        row = {"직원명": user_name, "날짜": str_date, "인센티브": st.session_state.inc_sum, "시간수당": ov_pay, "퇴근시간": sel_etime, "item1": cts[0], "item2": cts[1], "item3": cts[2], "item4": cts[3], "item5": cts[4], "item6": cts[5], "item7": cts[6], "합계": tot_val, "비고": remark_base, "입력시간": get_now_kst().strftime("%H:%M:%S")}
+        
+        # 기존 현금/카드/기타 데이터 유지 (덮어쓰기 방지)
+        for k in ["현금", "카드", "카드제외", "기타", "카드상세"]:
+            if k in existing.columns and not existing.empty:
+                 row[k] = existing.iloc[0][k]
+             
+        if save_to_gsheet(user_name, row):
+            st.session_state.sv_msg = f"✅ 데이터가 성공적으로 저장되었습니다! ({get_now_kst().strftime('%H:%M:%S')})"
+            st.rerun()
+
+    if st.session_state.get("sv_msg"):
+        st.markdown(f'<div class="save-success">{st.session_state.sv_msg}</div>', unsafe_allow_html=True)
+        st.session_state.sv_msg = None
 
 # --- 탭 2: 월간 정산 ---
 with tab_report:
