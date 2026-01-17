@@ -5,15 +5,15 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 소프트웨어 버전
-SW_VERSION = "v2.4.5"
+SW_VERSION = "v2.4.6"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
 
-# --- [정밀 레이아웃] 버튼 겹침 방지 및 콤마 최적화 CSS ---
+# --- [정밀 레이아웃] 버튼 겹침 해결 CSS ---
 st.markdown(f"""
     <style>
-    /* 1. 전체 여백 및 폭 최적화 */
+    /* 1. 전체 여백 최적화 */
     .block-container {{
         padding-top: 3.5rem !important;
         max-width: 450px !important;
@@ -22,32 +22,31 @@ st.markdown(f"""
     }}
     .version-tag {{ font-size: 10px; color: #ccc; text-align: right; margin-bottom: -10px; }}
 
-    /* 2. 불필요한 서식 제거 */
+    /* 2. 기본 서식 */
     hr {{ border: 0; height: 1px; background: #eee; margin: 15px 0; }}
     div[data-testid="stVerticalBlock"] > div {{ border: none !important; }}
     div[data-baseweb="base-input"] {{ border: none !important; background-color: #f1f3f5 !important; border-radius: 8px !important; }}
 
-    /* 3. ★ 핵심: 버튼 겹침 방지 및 3열 고정 ★ */
+    /* 3. ★ 핵심: 버튼 겹침 방지 (공간 강제 확보) ★ */
     [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
-        gap: 4px !important; /* 간격 최소화 */
+        gap: 6px !important; /* 버튼 사이 안전 거리 확보 */
+        align-items: center !important;
     }}
     [data-testid="column"] {{
         flex: 1 1 0% !important;
         min-width: 0 !important;
     }}
-    /* 버튼 내부 여백을 줄여 글자가 겹치지 않게 함 */
+    /* 버튼이 서로 겹치지 않게 최소 너비를 보장하고 글자 크기 조정 */
     div[data-testid="stHorizontalBlock"] button {{
-        font-size: 11px !important;
-        padding: 0px 2px !important;
-        margin: 0 !important;
+        font-size: 12px !important;
+        padding: 0px 4px !important;
         width: 100% !important;
-        min-height: 40px !important;
+        min-height: 42px !important;
         white-space: nowrap !important;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        flex-shrink: 0 !important; /* 버튼이 찌그러지거나 겹치지 않게 보호 */
     }}
 
     /* 4. 텍스트 및 테이블 스타일 */
@@ -121,7 +120,7 @@ if not st.session_state.logged_in:
         else: st.session_state.logged_in = True; st.session_state.user_name = user_id; st.rerun()
     st.stop()
 
-# --- 사이드바 (금액 콤마 반영) ---
+# --- 사이드바 ---
 user_name = st.session_state.user_name
 cfg = st.session_state.config
 with st.sidebar:
@@ -133,11 +132,11 @@ with st.sidebar:
         for i in range(7):
             c1, c2 = st.columns(2)
             n = c1.text_input(f"명칭{i+1}", value=cfg["item_names"][i], key=f"sn_{i}")
-            p = c2.number_input(f"가격{i+1} (원)", value=cfg["item_prices"][i], step=1000, key=f"sp_{i}")
+            p = c2.number_input(f"가격{i+1}", value=cfg["item_prices"][i], step=1000, key=f"sp_{i}")
             new_names.append(n); new_prices.append(p)
-        base = st.number_input("기본급 (원)", value=cfg["base_salary"], step=10000)
+        base = st.number_input("기본급", value=cfg["base_salary"])
         s_day = st.slider("정산 시작일", 1, 31, cfg["start_day"])
-        ins = st.number_input("보험료 (원)", value=cfg["insurance"], step=10)
+        ins = st.number_input("보험료", value=cfg["insurance"])
         if st.button("💿 설정 저장", use_container_width=True):
             st.session_state.config.update({"base_salary": base, "start_day": s_day, "insurance": ins, "item_names": new_names, "item_prices": new_prices})
             st.success("저장 완료"); st.rerun()
@@ -174,14 +173,13 @@ if "current_incen_sum" not in st.session_state or st.session_state.get("last_dat
     st.session_state.incen_history = [{"val": int(existing_row.iloc[0]["인센티브"]), "time": "기록"}] if is_edit and int(existing_row.iloc[0]["인센티브"]) > 0 else []
     st.session_state.last_date = str_date
 
-# 금액 표시 콤마 적용
 st.write(f"**💰 인센 합계: {st.session_state.current_incen_sum:,}원**")
 if st.session_state.incen_history:
     st.markdown(f'<div class="incen-log">📋 상세: {" / ".join([f"{h['val']:,}" for h in st.session_state.incen_history])}</div>', unsafe_allow_html=True)
 
-add_amt = st.number_input("인센 금액 (원)", min_value=0, step=1000, value=0)
+add_amt = st.number_input("인센 금액", min_value=0, step=1000, value=0)
 
-# 가로 3열 정렬 (겹침 방지 적용)
+# 가로 3열 버튼 (겹침 방지 보강)
 col1, col2, col3 = st.columns(3)
 if col1.button("➕추가", use_container_width=True):
     st.session_state.current_incen_sum += add_amt
@@ -226,7 +224,6 @@ if not df_all.empty:
     if not p_df.empty:
         total_extra = p_df["합계"].sum()
         total_incen = p_df["인센티브"].sum()
-        # 모든 금액에 콤마 적용
         st.write(f"**🏦 예상 수령: {int(cfg['base_salary'] + total_extra - cfg['insurance']):,}원**")
         st.markdown(f'<div class="calc-detail">(기본 {cfg["base_salary"]:,} + 추가 {total_extra:,} - 보험 {cfg["insurance"]:,})</div>', unsafe_allow_html=True)
         
@@ -240,6 +237,5 @@ if not df_all.empty:
                 for i in range(1, 8): item_sums[i-1] += int(r[f'item{i}'])
                 rows_html += f"<tr><td>{d}</td><td>{int(r['인센티브']):,}</td>{item_tds}<td style='color:blue;'>{int(r['합계']):,}</td></tr>"
         
-        # 합계 행에도 콤마 적용
         rows_html += f"<tr class='total-row'><td>합</td><td>{total_incen:,}</td>" + "".join([f"<td>{s}</td>" for s in item_sums]) + f"<td>{total_extra:,}</td></tr>"
         st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{h}</th>" for h in headers])}</tr>{rows_html}</table>', unsafe_allow_html=True)
