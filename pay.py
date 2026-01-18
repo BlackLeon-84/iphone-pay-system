@@ -5,6 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import calendar
 import time
+from io import BytesIO
 import hashlib
 
 # --- 상수 및 설정 ---
@@ -668,6 +669,24 @@ with tab_daily:
     # 예: 1/13~2/12. Start=13. e_dt=2/12.
     # render에 2/12를 넘기면? 12 < 13 -> 전월(1/13~2/12)로 계산됨. Correct.
     render_monthly_report(df_all, r_e_dt, sal_cfg, is_ov_staff, user_name, readonly=True)
+
+    # [New] 엑셀 다운로드 (가장 하단)
+    if not df_all.empty:
+        st.divider()
+        def to_excel(df):
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False, sheet_name='Sheet1')
+            return output.getvalue()
+        
+        excel_data = to_excel(df_all)
+        st.download_button(
+            label="💾 전체 데이터 엑셀로 다운로드",
+            data=excel_data,
+            file_name=f"{user_name}_정산데이터_{get_now_kst().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
 
 # --- 탭 2: 월간 정산 ---
 with tab_report:
