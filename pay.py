@@ -249,7 +249,7 @@ def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 # --- 세션 초기화 및 로그인 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=1)
 def get_staff_list_fixed():
     try:
         sheet = get_config_worksheet(); names = sheet.col_values(1)[1:]
