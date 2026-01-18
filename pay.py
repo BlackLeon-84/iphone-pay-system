@@ -29,18 +29,21 @@ st.markdown(f"""
         padding-left: 5px; border-left: 4px solid #007bff;
     }}
     
-    .st-key-incen_buttons [data-testid="stHorizontalBlock"] {{
+    .st-key-incen_buttons [data-testid="stHorizontalBlock"],
+    .st-key-fast_btns [data-testid="stHorizontalBlock"] {{
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         gap: 3px !important;
         width: 100% !important;
     }}
-    .st-key-incen_buttons [data-testid="stHorizontalBlock"] > div {{
+    .st-key-incen_buttons [data-testid="stHorizontalBlock"] > div,
+    .st-key-fast_btns [data-testid="stHorizontalBlock"] > div {{
         flex: 1 1 0% !important;
         min-width: 0 !important;
     }}
-    .st-key-incen_buttons button {{
+    .st-key-incen_buttons button,
+    .st-key-fast_btns button {{
         font-size: 11px !important;
         padding: 0px !important;
         width: 100% !important;
@@ -537,9 +540,10 @@ with tab_daily:
 
     # --- 휴무 및 기록 출력 ---
     st.markdown("##### ⚡ 빠른 동작")
-    b_c1, b_c2, b_c3 = st.columns([1, 1, 1])
-    
-    with b_c1:
+    with st.container(key="fast_btns"):
+        b_c1, b_c2, b_c3 = st.columns([1, 1, 1])
+        
+        with b_c1:
         if st.button("🌴 휴무", use_container_width=True, help="오늘 휴무로 기록합니다."):
             row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "시간수당": 0, "퇴근시간": "휴무", "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
             if save_to_gsheet(user_name, row): st.rerun()
@@ -555,7 +559,6 @@ with tab_daily:
                 st.success("데이터 삭제 완료"); time.sleep(0.5); st.rerun()
             else:
                  st.error("삭제 실패 (데이터가 없거나 통신 오류)")
-
 
     st.write("**📅 최근 7일 기록**")
     w_box = '<div class="weekly-box">'
@@ -589,7 +592,7 @@ with tab_daily:
         st.markdown(h_html + '</div>', unsafe_allow_html=True)
 
     st.number_input("인센티브 추가 금액 (입력 후 추가 버튼 클릭)", 0, step=1000, label_visibility="collapsed", key="inc_input_field")
-    with st.container():
+    with st.container(key="incen_buttons"):
         b1, b2, b3 = st.columns(3)
         def add_inc():
             val = st.session_state.inc_input_field
