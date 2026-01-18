@@ -230,6 +230,7 @@ def save_to_gsheet(user_name, df_row):
         else: sheet.append_row(vals)
         return True
     except: return False
+    finally: st.cache_data.clear()
 
 def get_safe_date(y, m, d): ld = calendar.monthrange(y, m)[1]; return date(y, m, min(safe_int(d, 1), ld))
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
@@ -419,7 +420,7 @@ with tab_daily:
     # --- 메인 화면 변수 및 날짜 처리 ---
     st.markdown(f'<div class="version-tag">{SW_VERSION} (Latest)</div>', unsafe_allow_html=True)
     st.write(f"### 💼 {user_name}님 실적")
-    sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed"); str_date = sel_date.strftime("%Y-%m-%d")
+    sel_date = st.date_input("날짜", value=date.today(), label_visibility="collapsed", key="sel_date"); str_date = sel_date.strftime("%Y-%m-%d")
 
     # [v4.0.1] 세션 초기값 보장 로직
     if "current_date" not in st.session_state: st.session_state.current_date = str_date
@@ -428,6 +429,7 @@ with tab_daily:
 
     # 날짜 변경 감지 및 초기화
     if st.session_state.current_date != str_date:
+        st.session_state.current_date = str_date # [Fix] 현재 날짜 상태 업데이트 (무한 루프 방지)
         ext_data = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
         
         # 상태 강제 업데이트: '비고' 란에서 상세 내역 파싱 (format: "메모 | 10000+20000")
@@ -456,7 +458,7 @@ with tab_daily:
         for i in range(7):
             val = safe_int(ext_data.iloc[0][f"item{i+1}"]) if not ext_data.empty else 0
             st.session_state[f"it_input_{i}"] = val
-        st.rerun()
+        # st.rerun() # [v4.5.3] 불필요한 rerun 제거 (렉 감소 및 루프 방지)
 
     existing = df_all[df_all["날짜"] == str_date] if not df_all.empty else pd.DataFrame()
     if not existing.empty: st.markdown(f'<div class="status-card status-saved">✅ {str_date} 데이터가 저장되어 있습니다</div>', unsafe_allow_html=True)
