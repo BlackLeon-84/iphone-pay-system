@@ -223,14 +223,10 @@ def save_to_gsheet(user_name, df_row):
         sheet = get_user_worksheet(user_name); rows = sheet.get_all_values(); idx = -1
         for i, r in enumerate(rows):
             if len(r) > 1 and r[1] == df_row['날짜']: idx = i + 1; break
-        sheet = get_user_worksheet(user_name); rows = sheet.get_all_values(); idx = -1
-        for i, r in enumerate(rows):
-            if len(r) > 1 and r[1] == df_row['날짜']: idx = i + 1; break
         vals = [format_curr(df_row.get(h, 0)) if h in ["인센티브", "시간수당", "합계", "현금", "카드", "카드제외", "기타"] or "item" in h else df_row.get(h, "") for h in USER_HEADER]
         if idx != -1: sheet.update(range_name=f"A{idx}:{chr(ord('A')+len(USER_HEADER)-1)}{idx}", values=[vals])
         else: sheet.append_row(vals)
         return True
-    except: return False
     except: return False
     finally: st.cache_data.clear()
 
