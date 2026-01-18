@@ -675,15 +675,61 @@ with tab_daily:
         st.divider()
         def to_excel(df):
             output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df.to_excel(writer, index=False, sheet_name='Sheet1')
             return output.getvalue()
         
-        excel_data = to_excel(df_all)
+        # [Modified] 리포트 기반 데이터 생성 (User Request: 하단 리포트 표 토대로 엑셀 다운로드)
+        excel_data = None
+        
+        # 1. 데이터 필터링 (리포트와 동일한 기간)
+        df_all['date_dt'] = pd.to_datetime(df_all['날짜']).dt.date
+        p_df = df_all[(df_all['date_dt'] >= r_s_dt) & (df_all['date_dt'] <= r_e_dt)].sort_values("날짜")
+        
+        if not p_df.empty:
+            # 2. 리포트 형식으로 컬럼 구성
+            # 날짜, 인센티브, (수당), 품목1~7(이름으로), 합계, 비고
+            report_data = []
+            it_names = sal_cfg["item_names"]
+            it_prices = sal_cfg["item_prices"]
+            
+            for _, r in p_df.iterrows():
+                row_dict = {}
+                row_dict["날짜"] = r["날짜"]
+                row_dict["인센티브"] = safe_int(r["인센티브"])
+                if is_ov_staff:
+                    row_dict["시간수당"] = safe_int(r.get("시간수당", 0))
+                
+                # 품목 (이름으로 매핑)
+                for i in range(7):
+                    row_dict[it_names[i]] = safe_int(r[f"item{i+1}"])
+                
+                # 합계 계산 (전체적용 옵션 고려)
+                if sal_cfg.get("apply_global"):
+                    row_inc = safe_int(r["인센티브"])
+                    row_ov = safe_int(r.get("시간수당", 0))
+                    row_items = sum([safe_int(r[f"item{i+1}"]) * safe_int(it_prices[i]) for i in range(7)])
+                    row_dict["합계"] = row_inc + row_ov + row_items
+                else:
+                    row_dict["합계"] = safe_int(r["합계"])
+                
+                row_dict["비고"] = r["비고"]
+                report_data.append(row_dict)
+            
+            report_df = pd.DataFrame(report_data)
+            excel_data = to_excel(report_df)
+            
+            # 파일명에 기간 포함
+            f_name = f"{user_name}_정산리포트_{r_s_dt.strftime('%m%d')}-{r_e_dt.strftime('%m%d')}.xlsx"
+        else:
+             # 데이터가 없을 경우 빈 파일 또는 처리 (여기선 버튼 비활성화 대신 빈 데이터)
+             f_name = f"{user_name}_정산리포트_NoData.xlsx"
+             excel_data = to_excel(pd.DataFrame())
+
         st.download_button(
-            label="💾 전체 데이터 엑셀로 다운로드",
+            label="💾 정산 리포트 엑셀로 다운로드",
             data=excel_data,
-            file_name=f"{user_name}_정산데이터_{get_now_kst().strftime('%Y%m%d')}.xlsx",
+            file_name=f_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
