@@ -544,21 +544,21 @@ with tab_daily:
         b_c1, b_c2, b_c3 = st.columns([1, 1, 1])
         
         with b_c1:
-        if st.button("🌴 휴무", use_container_width=True, help="오늘 휴무로 기록합니다."):
-            row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "시간수당": 0, "퇴근시간": "휴무", "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
-            if save_to_gsheet(user_name, row): st.rerun()
+            if st.button("🌴 휴무", use_container_width=True, help="오늘 휴무로 기록합니다."):
+                row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "시간수당": 0, "퇴근시간": "휴무", "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
+                if save_to_gsheet(user_name, row): st.rerun()
             
-    with b_c2:
-        if st.button("🚫 인센없음", use_container_width=True, help="인센티브 0원으로 기록합니다."):
-             row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "시간수당": 0, "퇴근시간": "20:00", "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "인센없음", "입력시간": get_now_kst().strftime("%H:%M:%S")}
-             if save_to_gsheet(user_name, row): st.rerun()
+        with b_c2:
+            if st.button("🚫 인센없음", use_container_width=True, help="인센티브 0원으로 기록합니다."):
+                 row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "시간수당": 0, "퇴근시간": "20:00", "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "인센없음", "입력시간": get_now_kst().strftime("%H:%M:%S")}
+                 if save_to_gsheet(user_name, row): st.rerun()
 
-    with b_c3:
-        if st.button("🗑️ 삭제", type="primary", use_container_width=True, help="현재 날짜의 데이터를 삭제합니다."):
-            if delete_from_gsheet(user_name, str_date):
-                st.success("데이터 삭제 완료"); time.sleep(0.5); st.rerun()
-            else:
-                 st.error("삭제 실패 (데이터가 없거나 통신 오류)")
+        with b_c3:
+            if st.button("🗑️ 삭제", type="primary", use_container_width=True, help="현재 날짜의 데이터를 삭제합니다."):
+                if delete_from_gsheet(user_name, str_date):
+                    st.success("데이터 삭제 완료"); time.sleep(0.5); st.rerun()
+                else:
+                     st.error("삭제 실패 (데이터가 없거나 통신 오류)")
 
     st.write("**📅 최근 7일 기록**")
     w_box = '<div class="weekly-box">'
