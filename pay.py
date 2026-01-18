@@ -89,9 +89,7 @@ st.markdown(f"""
 
 # --- 구글 시트 상수 ---
 SHEET_NAME = "아이폰정산"
-ORDERED_STAFF = ["태완", "남근", "성훈", "성욱"]
-SHEET_NAME = "아이폰정산"
-ORDERED_STAFF = ["태완", "남근", "성훈", "성욱"]
+ORDERED_STAFF = ["태완", "남근", "성훈", "대원", "성욱"]
 USER_HEADER = ["직원명", "날짜", "인센티브", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "합계", "비고", "입력시간", "시간수당", "퇴근시간", "현금", "카드", "카드제외", "기타", "카드상세"]
 
 def safe_int(val, default=0):
@@ -140,7 +138,7 @@ def load_staff_salary_config(name):
     try: sheet = get_config_worksheet(); rows = sheet.get_all_values()
     except: return None
     
-    base_template_name = "성훈" if name == "성욱" else ""
+    base_template_name = "성욱" if name == "대원" else ("성훈" if name == "성욱" else "")
     template_data = None
     
     if len(rows) > 1:
