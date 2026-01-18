@@ -9,7 +9,7 @@ from io import BytesIO
 import hashlib
 
 # --- 상수 및 설정 ---
-SW_VERSION = "v4.5.0"
+SW_VERSION = "v4.5.3"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
@@ -231,6 +231,19 @@ def save_to_gsheet(user_name, df_row):
         else: sheet.append_row(vals)
         return True
     except: return False
+    except: return False
+    finally: st.cache_data.clear()
+
+def delete_from_gsheet(user_name, date_str):
+    try:
+        sheet = get_user_worksheet(user_name); rows = sheet.get_all_values(); idx = -1
+        for i, r in enumerate(rows):
+            if len(r) > 1 and r[1] == date_str: idx = i + 1; break
+        if idx != -1:
+            sheet.delete_rows(idx)
+            return True
+        return False
+    except: return False
     finally: st.cache_data.clear()
 
 def get_safe_date(y, m, d): ld = calendar.monthrange(y, m)[1]; return date(y, m, min(safe_int(d, 1), ld))
@@ -279,6 +292,7 @@ if not st.session_state.logged_in:
 
     # [New] 업데이트 히스토리 데이터 (DB 없이 코드로 관리)
     UPDATE_HISTORY = [
+        {"ver": "v4.5.3", "date": "2026-01-18", "content": "• <b>[기능]</b> 일일 입력 버튼 3종 추가 (휴무/인센없음/삭제) 및 가로 배치<br>• <b>[편의성]</b> 잘못 입력된 데이터 삭제 기능 추가"},
         {"ver": "v4.5.2", "date": "2026-01-18", "content": "• <b>[디자인]</b> 업데이트 내역 뷰 개선 (카드형 스타일)<br>• <b>[로그인]</b> 엔터키 지원 + 테두리 없는 깔끔한 폼 적용"},
         {"ver": "v4.5.1", "date": "2026-01-18", "content": "• <b>[편의성]</b> 로그인 시 엔터(Enter) 키로 입장 가능"},
         {"ver": "v4.5.0", "date": "2026-01-18", "content": "• <b>[동기화]</b> 날짜 선택 시 하단 리포트 즉시 자동 변경<br>• <b>[UI]</b> 월간 공제 창 '접힘' 기본값 적용<br>• <b>[UI]</b> 리포트 기간 표기 직관적 개선 ('월급' 텍스트 제거)"},
@@ -526,9 +540,26 @@ with tab_daily:
             st.rerun()
 
     # --- 휴무 및 기록 출력 ---
-    if st.button("🌴 오늘 휴무 등록", use_container_width=True):
-        row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "시간수당": 0, "퇴근시간": "휴무", "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
-        if save_to_gsheet(user_name, row): st.rerun()
+    st.markdown("##### ⚡ 빠른 동작")
+    b_c1, b_c2, b_c3 = st.columns([1, 1, 1])
+    
+    with b_c1:
+        if st.button("🌴 휴무", use_container_width=True, help="오늘 휴무로 기록합니다."):
+            row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "시간수당": 0, "퇴근시간": "휴무", "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
+            if save_to_gsheet(user_name, row): st.rerun()
+            
+    with b_c2:
+        if st.button("🚫 인센없음", use_container_width=True, help="인센티브 0원으로 기록합니다."):
+             row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "시간수당": 0, "퇴근시간": "20:00", "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "인센없음", "입력시간": get_now_kst().strftime("%H:%M:%S")}
+             if save_to_gsheet(user_name, row): st.rerun()
+
+    with b_c3:
+        if st.button("🗑️ 삭제", type="primary", use_container_width=True, help="현재 날짜의 데이터를 삭제합니다."):
+            if delete_from_gsheet(user_name, str_date):
+                st.success("데이터 삭제 완료"); time.sleep(0.5); st.rerun()
+            else:
+                 st.error("삭제 실패 (데이터가 없거나 통신 오류)")
+
 
     st.write("**📅 최근 7일 기록**")
     w_box = '<div class="weekly-box">'
