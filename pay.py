@@ -12,7 +12,7 @@ import hashlib
 SW_VERSION = "v4.5.3"
 
 # 페이지 설정
-st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered")
+st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered", initial_sidebar_state="collapsed")
 
 # --- [디자인 보존 및 강화] CSS ---
 st.markdown(f"""
