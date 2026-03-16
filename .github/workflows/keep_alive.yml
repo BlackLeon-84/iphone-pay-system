@@ -1,0 +1,17 @@
+name: Streamlit Keep-Alive
+
+on:
+  schedule:
+    - cron: '*/20 * * * *' # 20분마다 실행하여 슬립 방지
+  workflow_dispatch: # 수동 실행 가능
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake up Streamlit App
+        run: |
+          # 기본 URL은 레포지토리 이름을 따릅니다. 만약 다를 경우 아래 URL을 수정해주세요.
+          APP_URL="https://iphone-pay-system.streamlit.app"
+          echo "Visiting $APP_URL to keep it awake..."
+          curl -I -s -o /dev/null -w "%{http_code}" "$APP_URL"
