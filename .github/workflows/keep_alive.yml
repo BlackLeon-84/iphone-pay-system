@@ -2,7 +2,7 @@ name: Streamlit Keep-Alive
 
 on:
   schedule:
-    - cron: '*/20 * * * *' # 20분마다 실행하여 슬립 방지
+    - cron: '0 */2 * * *' # 2시간마다 실행하여 슬립 방지
   workflow_dispatch: # 수동 실행 가능
 
 jobs:
