@@ -2,16 +2,25 @@ name: Streamlit Keep-Alive
 
 on:
   schedule:
-    - cron: '0 */2 * * *' # 2시간마다 실행하여 슬립 방지
+    - cron: '0 * * * *' # 매시간 실행하여 확실하게 깨어있도록 유지
   workflow_dispatch: # 수동 실행 가능
 
 jobs:
   keep-alive:
     runs-on: ubuntu-latest
     steps:
-      - name: Wake up Streamlit App
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
         run: |
-          # 기본 URL은 레포지토리 이름을 따릅니다. 만약 다를 경우 아래 URL을 수정해주세요.
-          APP_URL="https://iphone-pay-system.streamlit.app"
-          echo "Visiting $APP_URL to keep it awake..."
-          curl -I -s -o /dev/null -w "%{http_code}" "$APP_URL"
+          pip install playwright
+          playwright install chromium
+
+      - name: Run Wake-up Script
+        run: python keep_alive_script.py
