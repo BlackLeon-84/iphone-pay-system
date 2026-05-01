@@ -3,7 +3,7 @@ from playwright.async_api import async_playwright
 import sys
 
 async def keep_alive():
-    url = "https://iphone-pay-system.streamlit.app"
+    url = "https://iphone-pay-system-eqjf6ffdu5ttbsbaamcqrt.streamlit.app/"
     print(f"[*] Starting keep-alive script for {url}")
     
     async with async_playwright() as p:
