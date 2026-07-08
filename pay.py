@@ -603,10 +603,18 @@ def render_monthly_report(df_all, target_date, sal_cfg, is_ov_staff, user_name, 
     r_html += f"<tr class='total-row'><td>합계</td><td>{(t_inc if is_ov_staff else t_inc + t_ov):,}</td>" + (f"<td>{t_ov:,}</td>" if is_ov_staff else "") + "".join([f"<td>{s}</td>" for s in i_sums]) + f"<td>{total_sum_val:,}</td></tr>"
     st.markdown(f'<table class="report-table"><tr>{"".join([f"<th>{x}</th>" for x in hds])}</tr>{r_html}</table>', unsafe_allow_html=True)
 
-# --- 탭 구성 ---
-tab_daily, tab_report = st.tabs(["📝 일일 입력", "📊 월간 정산"])
+# --- 화면 전환 ---
+# st.tabs는 모든 탭 내용을 매번 렌더링하므로 월 선택 시 일부 브라우저에서
+# 이전 화면 아래에 새 화면이 이어붙는 현상이 생길 수 있다.
+main_view = st.radio(
+    "화면 선택",
+    ["📝 일일 입력", "📊 월간 정산"],
+    horizontal=True,
+    label_visibility="collapsed",
+    key="main_view",
+)
 
-with tab_daily:
+if main_view == "📝 일일 입력":
     # --- 메인 화면 변수 및 날짜 처리 ---
     st.markdown(f'<div class="version-tag">{SW_VERSION} (Latest)</div>', unsafe_allow_html=True)
     st.write(f"### 💼 {user_name}님 실적")
@@ -1116,8 +1124,8 @@ with tab_daily:
             use_container_width=True
         )
 
-# --- 탭 2: 월간 정산 ---
-with tab_report:
+# --- 월간 정산 ---
+if main_view == "📊 월간 정산":
     st.header("📊 월간 정산 리포트")
     # [Fix] NameError 방지: 탭 내에서 변수 재정의
     s_d, b, ins = safe_int(sal_cfg['start_day'], 13), safe_int(sal_cfg['base_salary']), safe_int(sal_cfg['insurance'])
@@ -1145,7 +1153,7 @@ with tab_report:
         m_ranges.append((st_dt, ed_dt))
 
     st.subheader("🗓️ 정산 월 선택")
-    sel_idx = st.selectbox("리포트 기간", range(len(m_opts)), format_func=lambda x: m_opts[x])
+    sel_idx = st.selectbox("리포트 기간", range(len(m_opts)), format_func=lambda x: m_opts[x], key="monthly_report_month")
     s_dt, e_dt = m_ranges[sel_idx]
     # [Fix] Duplicate period display removed (Handled by render_monthly_report)
 
