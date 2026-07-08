@@ -397,6 +397,41 @@ def delete_from_gsheet(user_name, date_str):
 def get_safe_date(y, m, d): ld = calendar.monthrange(y, m)[1]; return date(y, m, min(safe_int(d, 1), ld))
 def get_now_kst(): return datetime.now(timezone.utc) + timedelta(hours=9)
 
+def normalize_end_time(val, default="20:00"):
+    valid_times = [f"{h}:{m:02d}" for h in range(20, 24) for m in range(0, 60, 10)] + ["24:00"]
+    val = str(val or default).strip()
+    return val if val in valid_times else default
+
+def reset_daily_entry_state(row=None):
+    row = row if row is not None else {}
+    inc_val = safe_int(row.get("인센티브", 0))
+    st.session_state.inc_sum = inc_val
+
+    restored_his = []
+    remark = str(row.get("비고", ""))
+    if "|" in remark:
+        try:
+            hist_str = remark.split("|")[-1].strip()
+            if hist_str:
+                restored_his = [{"val": safe_int(x)} for x in hist_str.split("+") if x.strip()]
+        except:
+            pass
+    if not restored_his and inc_val > 0:
+        restored_his = [{"val": inc_val}]
+
+    st.session_state.inc_his = restored_his
+    st.session_state.inc_input_field = 0
+    for i in range(7):
+        st.session_state[f"it_input_{i}"] = safe_int(row.get(f"item{i+1}", 0))
+    st.session_state.sel_etime_main = normalize_end_time(row.get("퇴근시간", "20:00"))
+
+@st.cache_data(ttl=300)
+def to_excel_bytes(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Sheet1")
+    return output.getvalue()
+
 # --- 세션 초기화 및 로그인 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 
@@ -686,7 +721,7 @@ if main_view == "📝 일일 입력":
         
         # 퇴근 시간 초기화
         e_val = ext_data.iloc[0]["퇴근시간"] if not ext_data.empty else "20:00"
-        st.session_state.sel_etime_main = e_val
+        st.session_state.sel_etime_main = normalize_end_time(e_val)
         # st.rerun() # [v4.5.3] 불필요한 rerun 제거 (렉 감소 및 루프 방지)
 
     # --- 사이드바 ---
@@ -757,16 +792,21 @@ if main_view == "📝 일일 입력":
         with b_c1:
             if st.button("🛌 휴무", use_container_width=True, help="오늘 휴무로 기록합니다."):
                 row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "시간수당": 0, "퇴근시간": "휴무", "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "휴무", "입력시간": get_now_kst().strftime("%H:%M:%S")}
-                if save_to_gsheet(user_name, row): st.rerun()
+                if save_to_gsheet(user_name, row):
+                    reset_daily_entry_state(row)
+                    st.rerun()
             
         with b_c2:
             if st.button("🚫 인센없음", use_container_width=True, help="인센티브 0원으로 기록합니다."):
                  row = {"직원명": user_name, "날짜": str_date, "인센티브": 0, "시간수당": 0, "퇴근시간": "20:00", "item1":0, "item2":0, "item3":0, "item4":0, "item5":0, "item6":0, "item7":0, "합계": 0, "비고": "인센없음", "입력시간": get_now_kst().strftime("%H:%M:%S")}
-                 if save_to_gsheet(user_name, row): st.rerun()
+                 if save_to_gsheet(user_name, row):
+                    reset_daily_entry_state(row)
+                    st.rerun()
 
         with b_c3:
             if st.button("🗑️ 삭제", type="primary", use_container_width=True, help="현재 날짜의 데이터를 삭제합니다."):
                 if delete_from_gsheet(user_name, str_date):
+                    reset_daily_entry_state()
                     st.success("데이터 삭제 완료"); time.sleep(0.5); st.rerun()
                 else:
                      st.error("삭제 실패 (데이터가 없거나 통신 오류)")
@@ -861,7 +901,7 @@ if main_view == "📝 일일 입력":
             if is_ov_staff:
                 # 퇴근 시간 선택 (폼 내부)
                 etime_list = [f"{h}:{m:02d}" for h in range(20, 24) for m in range(0, 60, 10)] + ["24:00"]
-                e_val = existing.iloc[0]["퇴근시간"] if not existing.empty else "20:00"
+                e_val = normalize_end_time(existing.iloc[0]["퇴근시간"] if not existing.empty else "20:00")
                 e_idx = etime_list.index(e_val) if e_val in etime_list else 0
                 sel_etime = st.selectbox("퇴근 시간", options=etime_list, index=e_idx, key="sel_etime_main")
                 
@@ -943,7 +983,7 @@ if main_view == "📝 일일 입력":
                 cts = [st.session_state[f"it_input_{i}"] for i in range(7)]
                 
                 # 시간수당 재계산 (최신 선택값 기준)
-                s_etime = st.session_state.get("sel_etime_main", "20:00")
+                s_etime = normalize_end_time(st.session_state.get("sel_etime_main", "20:00"))
                 h, m = map(int, s_etime.split(":")) if s_etime != "24:00" else (24, 0)
                 ov_min = max(0, (h * 60 + m) - 1200)
                 o_pay = (ov_min // 10) * cfg["overtime_rate"]
@@ -1047,12 +1087,6 @@ if main_view == "📝 일일 입력":
     # [New] 엑셀 다운로드 (가장 하단)
     if not df_all.empty:
         st.divider()
-        def to_excel(df):
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Sheet1')
-            return output.getvalue()
-        
         # [Modified] 리포트 기반 데이터 생성 (User Request: 하단 리포트 표 토대로 엑셀 다운로드)
         excel_data = None
         
@@ -1107,14 +1141,14 @@ if main_view == "📝 일일 입력":
                 report_data.append(row_dict)
             
             report_df = pd.DataFrame(report_data)
-            excel_data = to_excel(report_df)
+            excel_data = to_excel_bytes(report_df)
             
             # 파일명에 기간 포함
             f_name = f"{user_name}_정산리포트_{r_s_dt.strftime('%m%d')}-{r_e_dt.strftime('%m%d')}.xlsx"
         else:
              # 데이터가 없을 경우 빈 파일 또는 처리 (여기선 버튼 비활성화 대신 빈 데이터)
              f_name = f"{user_name}_정산리포트_NoData.xlsx"
-             excel_data = to_excel(pd.DataFrame())
+             excel_data = to_excel_bytes(pd.DataFrame())
 
         st.download_button(
             label="💾 정산 리포트 엑셀로 다운로드",
