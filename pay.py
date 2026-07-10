@@ -9,7 +9,7 @@ from io import BytesIO
 import hashlib
 
 # --- 상수 및 설정 ---
-SW_VERSION = "v4.5.4"
+SW_VERSION = "v4.5.5"
 
 # 페이지 설정
 st.set_page_config(page_title=f"정산 {SW_VERSION}", layout="centered", initial_sidebar_state="collapsed")
@@ -140,13 +140,17 @@ def gspread_retry(func, *args, **kwargs):
         try:
             return func(*args, **kwargs)
         except gspread.exceptions.APIError as e:
-            if "429" in str(e) and i < max_retries - 1:
+            error_text = str(e).lower()
+            retryable = any(code in error_text for code in ("429", "500", "502", "503", "504"))
+            if retryable and i < max_retries - 1:
                 wait_time = (2 ** i) + 1
                 time.sleep(wait_time)
                 continue
             raise e
         except Exception as e:
-            if i < max_retries - 1:
+            error_text = str(e).lower()
+            retryable = any(term in error_text for term in ("timed out", "timeout", "connection reset", "temporarily unavailable"))
+            if retryable and i < max_retries - 1:
                 time.sleep(1)
                 continue
             raise e
@@ -316,6 +320,14 @@ def save_to_gsheet(user_name, df_row):
 # --- [New] 공제 내역 별도 저장 로직 ---
 DEDUCT_HEADER = ["Month", "User", "Cash", "Card", "CardDeduct", "Etc", "EtcAdd", "CardDetail", "UpdatedAt", "EtcAddDesc"]
 
+def card_detail_total(detail):
+    total = 0
+    for item in str(detail or "").split("||"):
+        parts = item.split("__")
+        if len(parts) >= 3 and parts[2] == "O":
+            total += safe_int(parts[1])
+    return total
+
 def get_deduction_worksheet():
     ss = get_spreadsheet()
     try:
@@ -327,6 +339,7 @@ def get_deduction_worksheet():
         ws = gspread_retry(ss.add_worksheet, title="Deductions", rows="1000", cols="15")
         gspread_retry(ws.append_row, DEDUCT_HEADER); return ws
 
+@st.cache_data(ttl=60)
 def load_monthly_deduction(user_name, yyyy_mm):
     try:
         ws = get_deduction_worksheet(); rows = gspread_retry(ws.get_all_values)
@@ -352,7 +365,9 @@ def load_monthly_deduction(user_name, yyyy_mm):
                     # "한번 입력하면 그대로 유지" -> 금액 포함 유지
                     # DetailStr에 금액도 포함되어 있으므로, 파싱하면 금액도 복구됨.
                     # 다만 CardDeduct 값 자체는 DB에만 저장된 합계이므로, 로드 시점에는 DetailStr만 있으면 됨.
-                    
+
+        if target_row.get("CardDetail"):
+            target_row["CardDeduct"] = card_detail_total(target_row["CardDetail"])
         return target_row
     except: return {}
 
@@ -378,6 +393,7 @@ def save_monthly_deduction(user_name, yyyy_mm, data_dict):
         
         if idx != -1: gspread_retry(ws.update, range_name=f"A{idx}:{chr(ord('A')+len(DEDUCT_HEADER)-1)}{idx}", values=[vals])
         else: gspread_retry(ws.append_row, vals)
+        load_monthly_deduction.clear()
         return True
     except Exception as e: return False
     finally: load_data_from_gsheet.clear()
@@ -485,6 +501,7 @@ if not st.session_state.logged_in:
 
     # [New] 업데이트 히스토리 데이터 (DB 없이 코드로 관리)
     UPDATE_HISTORY = [
+        {"ver": "v4.5.5", "date": "2026-07-10", "content": "• <b>[정산 정확도]</b> 다음 달로 이어진 카드 제외 항목의 합계를 실수령액에 반영<br>• <b>[속도]</b> 월간 공제 조회 캐시 적용 및 불필요한 재시도 감소<br>• <b>[반응성]</b> 삭제 후 대기 시간 제거"},
         {"ver": "v4.5.4", "date": "2026-01-23", "content": "• <b>[안정성]</b> 시트 생성 충돌(Race Condition) 완벽 해결<br>• <b>[최적화]</b> 품목 및 인센티브 입력 렉 제거 (Form 적용)<br>• <b>[업데이트]</b> 로그인 안전 장치 및 버전 정보 갱신"},
         {"ver": "v4.5.3", "date": "2026-01-18", "content": "• <b>[디자인]</b> 인센티브 & 품목 입력 통합 카드 디자인 적용<br>• <b>[모바일]</b> 품목 2단 배열 & 버튼 가로 정렬<br>• <b>[UI]</b> 날짜 선택 및 정렬 개선"},
         {"ver": "v4.5.2", "date": "2026-01-18", "content": "• <b>[디자인]</b> 업데이트 내역 뷰 개선 (카드형 스타일)<br>• <b>[로그인]</b> 엔터키 지원 + 테두리 없는 깔끔한 폼 적용"},
@@ -577,8 +594,6 @@ def render_monthly_report(df_all, target_date, sal_cfg, is_ov_staff, user_name, 
     if sal_cfg.get("apply_global"):
         t_inc = safe_int(p_df["인센티브"].sum())
         t_ov = safe_int(p_df["시간수당"].sum())
-        t_items = sum([safe_int(p_df[f"item{i+1}"].sum()) * safe_int(it_p[i]) for i in range(7)])
-        total_sum_val = t_inc + t_ov + t_items
         t_items = sum([safe_int(p_df[f"item{i+1}"].sum()) * safe_int(it_p[i]) for i in range(7)])
         total_sum_val = t_inc + t_ov + t_items
     else:
@@ -807,7 +822,8 @@ if main_view == "📝 일일 입력":
             if st.button("🗑️ 삭제", type="primary", use_container_width=True, help="현재 날짜의 데이터를 삭제합니다."):
                 if delete_from_gsheet(user_name, str_date):
                     reset_daily_entry_state()
-                    st.success("데이터 삭제 완료"); time.sleep(0.5); st.rerun()
+                    st.toast("데이터 삭제 완료")
+                    st.rerun()
                 else:
                      st.error("삭제 실패 (데이터가 없거나 통신 오류)")
 
