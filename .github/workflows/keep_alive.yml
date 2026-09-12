@@ -30,7 +30,7 @@ jobs:
         run: python keep_alive_script.py
 
       - name: Keep scheduled workflow active
-        if: github.event.schedule == '41 3 1 * *'
+        if: always() && github.event.schedule == '41 3 1 * *'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
