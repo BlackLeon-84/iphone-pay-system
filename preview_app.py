@@ -425,7 +425,7 @@ input, [data-baseweb="select"] > div { border-radius:6px!important; }
 .period-line { margin:9px 0 24px; }
 .st-key-navigation [role="radiogroup"] { gap:4px; }
 .st-key-navigation label { padding:9px 10px!important; border-radius:6px; }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .block-container { padding:20px 18px 104px; }
   h1 { font-size:29px!important; }
   .login-wrap h1 { font-size:36px!important; }
