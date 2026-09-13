@@ -6,6 +6,7 @@
 - Browser-rendered desktop: `/DATA/Documents/project/iphone-pay-system/design-preview-2026-09-13/daily-desktop.png`
 - Browser-rendered mobile: `/DATA/Documents/project/iphone-pay-system/design-preview-2026-09-13/daily-mobile375.png`
 - Browser-rendered tablet: `/DATA/Documents/project/iphone-pay-system/design-preview-2026-09-13/daily-tablet740.png`
+- Browser-rendered dark-preference check: `/DATA/Documents/project/iphone-pay-system/design-preview-2026-09-13/daily-tablet740-dark.png`
 - Browser-rendered report: `/DATA/Documents/project/iphone-pay-system/design-preview-2026-09-13/report-mobile375.png`
 - Combined comparison: `/DATA/Documents/project/iphone-pay-system/design-preview-2026-09-13/qa-side-by-side.png`
 - Source pixels: 1627 x 973
@@ -39,6 +40,7 @@ The 375px capture has no horizontal overflow, the month title remains on one lin
 3. Second mobile pass: the month title wrapped and selected navigation styling was inconsistent. Header proportions and selected-control colors were corrected.
 4. Final capture: desktop, 390px, and 375px had zero horizontal overflow and zero console/page errors.
 5. Browser-comment follow-up: 740px retained the desktop two-column layout because the responsive breakpoint ended at 700px. The breakpoint was raised to 900px; the 740px recheck now uses one column with zero overflow and zero console/page errors.
+6. Dark-preference follow-up: Streamlit selected dark widget and text tokens while custom CSS forced only the page background to white. A native Streamlit light theme was added; light and dark browser preferences now render identical readable colors.
 
 ## Primary Interactions Tested
 
