@@ -26,6 +26,14 @@ class DeductionLogicTest(unittest.TestCase):
         self.assertEqual(0, real_card_deduction(0, 129_900))
         self.assertEqual(70_000, real_card_deduction(100_000, 30_000))
 
+    def test_taewan_current_month_ignores_unsaved_carried_amount(self):
+        carried = merge_carried_card_detail({}, "카톡__2500__O||바디프렌드__37500__O||집부가세__75000__O||네이버플러스__4900__O||캡컷__10000__O")
+        card_deduction = real_card_deduction(0, carried.get("CardDeduct", 0))
+        final_pay = 3_000_000 + 85_000 - 110_410 - card_deduction
+
+        self.assertEqual(0, card_deduction)
+        self.assertEqual(2_974_590, final_pay)
+
 
 if __name__ == "__main__":
     unittest.main()
