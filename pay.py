@@ -8,6 +8,8 @@ import time
 from io import BytesIO
 import hashlib
 
+from deduction_logic import card_list_only_update, merge_carried_card_detail, real_card_deduction
+
 # --- 상수 및 설정 ---
 SW_VERSION = "v4.5.5"
 
@@ -320,14 +322,6 @@ def save_to_gsheet(user_name, df_row):
 # --- [New] 공제 내역 별도 저장 로직 ---
 DEDUCT_HEADER = ["Month", "User", "Cash", "Card", "CardDeduct", "Etc", "EtcAdd", "CardDetail", "UpdatedAt", "EtcAddDesc"]
 
-def card_detail_total(detail):
-    total = 0
-    for item in str(detail or "").split("||"):
-        parts = item.split("__")
-        if len(parts) >= 3 and parts[2] == "O":
-            total += safe_int(parts[1])
-    return total
-
 def get_deduction_worksheet():
     ss = get_spreadsheet()
     try:
@@ -352,23 +346,15 @@ def load_monthly_deduction(user_name, yyyy_mm):
                 target_row = {hd[i]: r[i] for i in range(min(len(hd), len(r)))}
                 break
         
-        # [New] 이번 달 카드 상세가 없으면, 가장 최근 달의 카드 상세를 가져옴 (Carry Over)
+        # 이번 달 카드 상세가 없으면 최근 목록만 가져오고, 적용 금액은 이월하지 않는다.
+        carried_detail = ""
         if not target_row.get("CardDetail"):
-            # 날짜순 정렬 (최신순)
             sorted_rows = sorted([r for r in rows[1:] if len(r) > 1 and r[1] == user_name and r[0] < yyyy_mm], key=lambda x: x[0], reverse=True)
             if sorted_rows:
-                # 가장 최근 데이터의 CardDetail만 복사
                 prev_row = {hd[i]: sorted_rows[0][i] for i in range(min(len(hd), len(sorted_rows[0])))}
-                if prev_row.get("CardDetail"):
-                    target_row["CardDetail"] = prev_row["CardDetail"]
-                    # 주의: CardDeduct(제외 총액)는 가져오지 않음 (실제 금액은 매달 다를 수 있으므로? 아니면 템플릿이면 금액도?)
-                    # "한번 입력하면 그대로 유지" -> 금액 포함 유지
-                    # DetailStr에 금액도 포함되어 있으므로, 파싱하면 금액도 복구됨.
-                    # 다만 CardDeduct 값 자체는 DB에만 저장된 합계이므로, 로드 시점에는 DetailStr만 있으면 됨.
+                carried_detail = prev_row.get("CardDetail", "")
 
-        if target_row.get("CardDetail"):
-            target_row["CardDeduct"] = card_detail_total(target_row["CardDetail"])
-        return target_row
+        return merge_carried_card_detail(target_row, carried_detail)
     except: return {}
 
 def save_monthly_deduction(user_name, yyyy_mm, data_dict):
@@ -611,7 +597,7 @@ def render_monthly_report(df_all, target_date, sal_cfg, is_ov_staff, user_name, 
     t_etc_add_desc = deduct_data.get("EtcAddDesc", "")
 
     # [핵심 변경] 카드 실 공제액 = 카드 총액 - 카드 제외액
-    t_card_real = t_card - t_card_ex
+    t_card_real = real_card_deduction(t_card, t_card_ex)
     final_pay = int(b + total_sum_val - ins - t_cash - t_card_real - t_etc + t_etc_add)
     combined_inc = t_inc + t_items + t_ov
     subtotal_pay = int(b + total_sum_val - ins)
@@ -1312,19 +1298,7 @@ if main_view == "📊 월간 정산":
                     
                     # DB 저장 호출
                     curr_d = load_monthly_deduction(user_name, deduct_key) # 현재 DB 상태 로드 (현금 등 보존)
-                    new_list = st.session_state.card_exclude_items
-                    detail_str = "||".join([f"{x['desc']}__{x['amt']}__O" for x in new_list])
-                    calc_exclude_sum = sum([x["amt"] for x in new_list])
-                    
-                    save_data = {
-                        "Cash": curr_d.get("Cash", 0),
-                        "Card": curr_d.get("Card", 0), # 카드 총액 보존
-                        "CardDeduct": calc_exclude_sum,
-                        "Etc": curr_d.get("Etc", 0),
-                        "EtcAdd": curr_d.get("EtcAdd", 0),
-                        "EtcAddDesc": curr_d.get("EtcAddDesc", ""),
-                        "CardDetail": detail_str
-                    }
+                    save_data = card_list_only_update(curr_d, st.session_state.card_exclude_items)
                     save_monthly_deduction(user_name, deduct_key, save_data)
                     st.rerun()
 
@@ -1344,26 +1318,14 @@ if main_view == "📊 월간 정산":
                      
                      # DB 저장 호출
                      curr_d = load_monthly_deduction(user_name, deduct_key)
-                     new_list = st.session_state.card_exclude_items
-                     detail_str = "||".join([f"{x['desc']}__{x['amt']}__O" for x in new_list])
-                     calc_exclude_sum = sum([x["amt"] for x in new_list])
-                     
-                     save_data = {
-                            "Cash": curr_d.get("Cash", 0),
-                            "Card": curr_d.get("Card", 0),
-                            "CardDeduct": calc_exclude_sum,
-                            "Etc": curr_d.get("Etc", 0),
-                            "EtcAdd": curr_d.get("EtcAdd", 0),
-                            "EtcAddDesc": curr_d.get("EtcAddDesc", ""),
-                            "CardDetail": detail_str
-                     }
+                     save_data = card_list_only_update(curr_d, st.session_state.card_exclude_items)
                      save_monthly_deduction(user_name, deduct_key, save_data)
                      st.rerun()
 
         # 실시간 계산 미리보기 (폼 밖)
         calc_exclude_sum_view = sum([x["amt"] for x in st.session_state.card_exclude_items])
-        calc_real_deduct_view = st.session_state.get("inp_card_tot", 0) - calc_exclude_sum_view
-        st.markdown(f"<div style='background:#fff0f0; padding:10px; border-radius:5px; text-align:center; margin-top:10px;'>💳 (저장된 기준) 실 공제액: <b>{st.session_state.get('inp_card_tot', 0):,}</b> - <b>{calc_exclude_sum_view:,}</b> = <b style='color:red;'>{calc_real_deduct_view:,}원</b></div>", unsafe_allow_html=True)
+        calc_real_deduct_view = real_card_deduction(st.session_state.get("inp_card_tot", 0), calc_exclude_sum_view)
+        st.markdown(f"<div style='background:#fff0f0; padding:10px; border-radius:5px; text-align:center; margin-top:10px;'>💳 저장 전 예상 실 공제액: <b>{st.session_state.get('inp_card_tot', 0):,}</b> - <b>{calc_exclude_sum_view:,}</b> = <b style='color:red;'>{calc_real_deduct_view:,}원</b><br><small>급여에는 공제 내역 저장 후 반영됩니다.</small></div>", unsafe_allow_html=True)
 
 
     # 리포트 출력 (Refactored Function Call)
